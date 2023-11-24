@@ -1,0 +1,21 @@
+[package]
+name = "retrogress"
+authors = ["Eric Saxby <sax@livinginthepast.org>", "synchonal.dev"]
+description = "Progress bars with a thin API around complex features"
+edition = "2021"
+homepage = "https://github.com/synchronal"
+license = "MIT"
+readme = "./README.md"
+repository = "https://github.com/synchronal/retrogress"
+version = "0.1.0"
+
+
+[dependencies]
+console = "0.15"
+indicatif = "0.17"
+
+
+[features]
+# Treat warnings as a build error.
+default = ["strict"]
+strict = []
