@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- add `hide` and `show` to `Progress`.
+
 ## 0.1.0
 
 - `retrogress::Sync` for cases when a single progres bar is running at

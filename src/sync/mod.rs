@@ -2,7 +2,9 @@ use crate::progress::Ref;
 use crate::Progress;
 
 use console::style;
+use console::Term;
 use indicatif::ProgressBar;
+use indicatif::ProgressDrawTarget;
 use indicatif::ProgressStyle;
 use std::collections::HashMap;
 use std::time::Duration;
@@ -65,6 +67,12 @@ impl Progress for Sync {
         pb.finish();
     }
 
+    fn hide(&mut self, reference: Ref) {
+        let pb = self.bars.get(&reference).unwrap();
+        pb.set_draw_target(ProgressDrawTarget::hidden());
+        Term::stderr().clear_line().unwrap();
+    }
+
     fn println(&mut self, reference: Ref, msg: &str) {
         let pb = self.bars.get(&reference).unwrap();
         pb.println(msg);
@@ -73,6 +81,12 @@ impl Progress for Sync {
     fn set_message(&mut self, reference: Ref, msg: String) {
         let pb = self.bars.get(&reference).unwrap();
         pb.set_message(msg.clone());
+    }
+
+    fn show(&mut self, reference: Ref) {
+        Term::stderr().clear_line().unwrap();
+        let pb = self.bars.get(&reference).unwrap();
+        pb.set_draw_target(ProgressDrawTarget::stderr());
     }
 
     fn succeeded(&mut self, reference: Ref) {

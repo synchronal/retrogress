@@ -30,11 +30,15 @@ pub trait Progress {
     fn append(&mut self, msg: &str) -> Ref;
     /// Mark the given progress bar as failed.
     fn failed(&mut self, references: Ref);
+    /// Hides the given progress bar.
+    fn hide(&mut self, reference: Ref);
     /// Prints a line of text above a progress bar, without interrupted it.
     /// Helpful when capturing output from commands to show to users.
     fn println(&mut self, reference: Ref, msg: &str);
     /// Update the message shown for a progress bar.
     fn set_message(&mut self, reference: Ref, msg: String);
+    /// Shows the given progress bar.
+    fn show(&mut self, reference: Ref);
     /// Mark the given progress bar as succeeded.
     fn succeeded(&mut self, reference: Ref);
 }
@@ -49,19 +53,21 @@ impl Progress for ProgressBar {
     fn append(&mut self, msg: &str) -> Ref {
         self.0.lock().unwrap().append(msg)
     }
-
     fn failed(&mut self, reference: Ref) {
         self.0.lock().unwrap().failed(reference)
     }
-
+    fn hide(&mut self, reference: Ref) {
+        self.0.lock().unwrap().hide(reference)
+    }
     fn println(&mut self, reference: Ref, msg: &str) {
         self.0.lock().unwrap().println(reference, msg)
     }
-
     fn set_message(&mut self, reference: Ref, msg: String) {
         self.0.lock().unwrap().set_message(reference, msg)
     }
-
+    fn show(&mut self, reference: Ref) {
+        self.0.lock().unwrap().show(reference)
+    }
     fn succeeded(&mut self, reference: Ref) {
         self.0.lock().unwrap().succeeded(reference)
     }
