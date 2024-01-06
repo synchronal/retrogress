@@ -1,5 +1,4 @@
 [doctor]
-
 checks = [
   { check = "homebrew" },
   { check = "tool-versions", command = "plugin-installed", args = { plugin = "rust" } },
@@ -9,14 +8,12 @@ checks = [
 ]
 
 [test]
-
 checks = [
   { name = "Check for warnings", shell = "cargo build --workspace --features strict" },
   { step = "rust", command = "test", verbose = true },
 ]
 
 [audit]
-
 checks = [
   { name = "Audit crates", shell = "cargo audit", allow_failure = true, verbose = true },
   { check = "rust", command = "format-check" },
@@ -24,15 +21,18 @@ checks = [
   { step = "rust", command = "clippy" },
 ]
 
-[update]
+[outdated]
+checks = [
+  { check = "rust" },
+]
 
+[update]
 steps = [
   { step = "git", command = "pull" },
   { doctor = {} },
 ]
 
 [shipit]
-
 steps = [
   { audit = {} },
   { update = {} },
