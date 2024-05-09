@@ -25,6 +25,9 @@ pub struct Sync {
 
 impl Sync {
     pub fn new() -> Self {
+        console::set_colors_enabled(true);
+        console::set_colors_enabled_stderr(true);
+
         let spinner_style = ProgressStyle::with_template("{prefix:.bold} {spinner} {msg}")
             .unwrap()
             .tick_chars("⣾⣽⣻⢿⡿⣟⣯⣷");
