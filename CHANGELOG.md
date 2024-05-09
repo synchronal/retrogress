@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 0.2.1
+
+- Always enable ansi colors.
+- Disable tick when hidden.
+
 ## 0.2.0
 
 - add `hide` and `show` to `Progress`.
