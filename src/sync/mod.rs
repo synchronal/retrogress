@@ -73,6 +73,7 @@ impl Progress for Sync {
     fn hide(&mut self, reference: Ref) {
         let pb = self.bars.get(&reference).unwrap();
         pb.set_draw_target(ProgressDrawTarget::hidden());
+        pb.disable_steady_tick();
         Term::stderr().clear_line().unwrap();
     }
 
@@ -89,6 +90,7 @@ impl Progress for Sync {
     fn show(&mut self, reference: Ref) {
         Term::stderr().clear_line().unwrap();
         let pb = self.bars.get(&reference).unwrap();
+        pb.enable_steady_tick(Duration::from_millis(50));
         pb.set_draw_target(ProgressDrawTarget::stderr());
     }
 
