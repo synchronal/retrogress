@@ -33,7 +33,7 @@ jobs:
           target/
         key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}-${{ steps.setup-rust.outputs.cachekey }}
     - name: Install cargo audit
-      run: cargo install cargo-audit
+      run: if cargo-audit --help >/dev/null; then; echo "installed"; else; cargo install cargo-audit; fi
     - name: Build
       run: cargo build --workspace --features strict --verbose
 
