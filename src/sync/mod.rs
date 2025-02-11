@@ -16,7 +16,6 @@ use std::time::Duration;
 /// use retrogress::{ProgressBar, Sync};
 /// let mut progress = ProgressBar::new(Sync::boxed());
 /// ```
-
 pub struct Sync {
     bars: HashMap<Ref, ProgressBar>,
     _running: ProgressStyle,

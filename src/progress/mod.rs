@@ -23,7 +23,6 @@ impl Default for Ref {
 /// Progress is a trait that may be implemented to create new progress bar
 /// behaviors. Its normal usage is as a `Box<dyn Progress>` that can be
 /// put into a `ProgressBar`.
-
 pub trait Progress {
     /// Append a new progress bar to the console. Returns a `usize` that
     /// serves as a reference to the progress bar in other functions.
