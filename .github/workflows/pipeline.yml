@@ -87,7 +87,7 @@ jobs:
           target/
         key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}-${{ steps.setup-rust.outputs.cachekey }}
     - name: Install cargo audit
-      run: cargo install cargo-audit
+      run: if cargo-audit --help >/dev/null; then; echo "installed"; else; cargo install cargo-audit; fi
     - name: Cargo audit
       run: cargo audit
     - name: Cargo format check
