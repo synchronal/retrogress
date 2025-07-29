@@ -19,9 +19,11 @@
 //! progress.succeeded(pb);
 //! ```
 
+pub mod parallel;
 pub mod progress;
 pub mod sync;
 
+pub use parallel::Parallel;
 pub use progress::Progress;
 pub use progress::ProgressBar;
 pub use sync::Sync;
