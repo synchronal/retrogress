@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Remove dependency on indicatif.
+
 ## 0.2.1
 
 - Always enable ansi colors.
