@@ -1,12 +1,11 @@
 use crate::progress::Ref;
+use crate::render::{MultiProgress, ProgressBar};
 use crate::Progress;
 
 use console::style;
-use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use std::collections::HashMap;
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread::{self, JoinHandle};
-use std::time::Duration;
 
 #[derive(Debug)]
 enum ProgressMessage {
@@ -64,25 +63,16 @@ impl Parallel {
         let multi_progress = MultiProgress::new();
         let mut bars: HashMap<Ref, ProgressBarState> = HashMap::new();
 
-        let running_style = ProgressStyle::with_template("{prefix:.bold} {spinner} {msg}")
-            .unwrap()
-            .tick_chars("⣾⣽⣻⢿⡿⣟⣯⣷");
-
-        let stopped_style = ProgressStyle::with_template("{prefix:.bold} {msg}").unwrap();
-
         while let Ok(message) = receiver.recv() {
             match message {
                 ProgressMessage::Append { reference, message } => {
-                    let pb = multi_progress.add(ProgressBar::new(100));
-                    pb.set_style(running_style.clone());
-                    pb.set_prefix(format!("{}", style("•").green()));
-                    pb.set_message(message);
-                    pb.enable_steady_tick(Duration::from_millis(50));
+                    let pb = ProgressBar::new(message);
+                    let bar = multi_progress.add(pb);
 
                     bars.insert(
                         reference,
                         ProgressBarState {
-                            bar: pb,
+                            bar,
                             output_buffer: Vec::new(),
                         },
                     );
@@ -101,7 +91,6 @@ impl Parallel {
                 }
                 ProgressMessage::Failed { reference } => {
                     if let Some(state) = bars.get(&reference) {
-                        state.bar.set_style(stopped_style.clone());
                         state
                             .bar
                             .set_prefix(format!("{}", style("𝗑").bold().bright().red()));
@@ -110,7 +99,6 @@ impl Parallel {
                 }
                 ProgressMessage::Succeeded { reference } => {
                     if let Some(state) = bars.get(&reference) {
-                        state.bar.set_style(stopped_style.clone());
                         state
                             .bar
                             .set_prefix(format!("{}", style("✓").bold().green()));
@@ -119,18 +107,12 @@ impl Parallel {
                 }
                 ProgressMessage::Hide { reference } => {
                     if let Some(state) = bars.get(&reference) {
-                        state
-                            .bar
-                            .set_draw_target(indicatif::ProgressDrawTarget::hidden());
-                        state.bar.disable_steady_tick();
+                        state.bar.hide();
                     }
                 }
                 ProgressMessage::Show { reference } => {
                     if let Some(state) = bars.get(&reference) {
-                        state.bar.enable_steady_tick(Duration::from_millis(50));
-                        state
-                            .bar
-                            .set_draw_target(indicatif::ProgressDrawTarget::stderr());
+                        state.bar.show();
                     }
                 }
                 ProgressMessage::Shutdown => {

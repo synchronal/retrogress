@@ -1,13 +1,9 @@
 use crate::progress::Ref;
+use crate::render::ProgressBar;
 use crate::Progress;
 
 use console::style;
-use console::Term;
-use indicatif::ProgressBar;
-use indicatif::ProgressDrawTarget;
-use indicatif::ProgressStyle;
 use std::collections::HashMap;
-use std::time::Duration;
 
 /// An implementation of `Progress` intended for usages when one
 /// progress bar runs at a time.
@@ -18,8 +14,6 @@ use std::time::Duration;
 /// ```
 pub struct Sync {
     bars: HashMap<Ref, ProgressBar>,
-    _running: ProgressStyle,
-    _stopped: ProgressStyle,
 }
 
 impl Sync {
@@ -27,16 +21,8 @@ impl Sync {
         console::set_colors_enabled(true);
         console::set_colors_enabled_stderr(true);
 
-        let spinner_style = ProgressStyle::with_template("{prefix:.bold} {spinner} {msg}")
-            .unwrap()
-            .tick_chars("⣾⣽⣻⢿⡿⣟⣯⣷");
-
-        let stopped_style = ProgressStyle::with_template("{prefix:.bold} {msg}").unwrap();
-
         Self {
             bars: HashMap::new(),
-            _running: spinner_style,
-            _stopped: stopped_style,
         }
     }
 
@@ -53,27 +39,21 @@ impl Default for Sync {
 
 impl Progress for Sync {
     fn append(&mut self, msg: &str) -> Ref {
-        let pb = ProgressBar::new(100).with_message(msg.to_string());
-        pb.set_style(self._running.clone());
-        pb.set_prefix(format!("{}", style("•").green()));
-        pb.enable_steady_tick(Duration::from_millis(50));
-
+        let pb = ProgressBar::new(msg.to_string());
         let reference = Ref::new();
         self.bars.insert(reference, pb);
         reference
     }
+
     fn failed(&mut self, reference: Ref) {
         let pb = self.bars.get(&reference).unwrap();
-        pb.set_style(self._stopped.clone());
         pb.set_prefix(format!("{}", style("𝗑").bold().bright().red()));
         pb.finish();
     }
 
     fn hide(&mut self, reference: Ref) {
         let pb = self.bars.get(&reference).unwrap();
-        pb.set_draw_target(ProgressDrawTarget::hidden());
-        pb.disable_steady_tick();
-        Term::stderr().clear_line().unwrap();
+        pb.hide();
     }
 
     fn println(&mut self, reference: Ref, msg: &str) {
@@ -83,19 +63,16 @@ impl Progress for Sync {
 
     fn set_message(&mut self, reference: Ref, msg: String) {
         let pb = self.bars.get(&reference).unwrap();
-        pb.set_message(msg.clone());
+        pb.set_message(msg);
     }
 
     fn show(&mut self, reference: Ref) {
-        Term::stderr().clear_line().unwrap();
         let pb = self.bars.get(&reference).unwrap();
-        pb.enable_steady_tick(Duration::from_millis(50));
-        pb.set_draw_target(ProgressDrawTarget::stderr());
+        pb.show();
     }
 
     fn succeeded(&mut self, reference: Ref) {
         let pb = self.bars.get(&reference).unwrap();
-        pb.set_style(self._stopped.clone());
         pb.set_prefix(format!("{}", style("✓").bold().green()));
         pb.finish();
     }
