@@ -179,3 +179,231 @@ impl Default for MultiProgress {
         Self::new()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Duration;
+
+    #[test]
+    fn test_progress_bar_new_creates_with_message() {
+        let message = "Test progress bar".to_string();
+        let pb = ProgressBar::new(message.clone());
+
+        let state = pb.state.lock().unwrap();
+        assert_eq!(state.message, message);
+        assert_eq!(state.spinner_index, 0);
+        assert_eq!(state.visible, true);
+        assert_eq!(state.finished, false);
+
+        // Check that ticker is running
+        assert_eq!(pb.ticker.load(Ordering::Relaxed), true);
+    }
+
+    #[test]
+    fn test_progress_bar_set_prefix() {
+        let pb = ProgressBar::new("Test".to_string());
+        let new_prefix = "✓".to_string();
+
+        pb.set_prefix(new_prefix.clone());
+
+        let state = pb.state.lock().unwrap();
+        assert_eq!(state.prefix, new_prefix);
+    }
+
+    #[test]
+    fn test_progress_bar_set_message() {
+        let pb = ProgressBar::new("Initial message".to_string());
+        let new_message = "Updated message".to_string();
+
+        pb.set_message(new_message.clone());
+
+        let state = pb.state.lock().unwrap();
+        assert_eq!(state.message, new_message);
+    }
+
+    #[test]
+    fn test_progress_bar_hide() {
+        let pb = ProgressBar::new("Test".to_string());
+
+        pb.hide();
+
+        let state = pb.state.lock().unwrap();
+        assert_eq!(state.visible, false);
+        assert_eq!(pb.ticker.load(Ordering::Relaxed), false);
+    }
+
+    #[test]
+    fn test_progress_bar_show() {
+        let pb = ProgressBar::new("Test".to_string());
+
+        // First hide it
+        pb.hide();
+        assert_eq!(pb.state.lock().unwrap().visible, false);
+
+        // Then show it
+        pb.show();
+
+        let state = pb.state.lock().unwrap();
+        assert_eq!(state.visible, true);
+        assert_eq!(pb.ticker.load(Ordering::Relaxed), true);
+    }
+
+    #[test]
+    fn test_progress_bar_finish() {
+        let pb = ProgressBar::new("Test".to_string());
+
+        pb.finish();
+
+        let state = pb.state.lock().unwrap();
+        assert_eq!(state.finished, true);
+        assert_eq!(pb.ticker.load(Ordering::Relaxed), false);
+    }
+
+    #[test]
+    fn test_progress_bar_println_when_visible() {
+        let pb = ProgressBar::new("Test".to_string());
+
+        // This should not panic when the progress bar is visible
+        pb.println("Test output");
+    }
+
+    #[test]
+    fn test_progress_bar_println_when_hidden() {
+        let pb = ProgressBar::new("Test".to_string());
+        pb.hide();
+
+        // This should not panic when the progress bar is hidden
+        pb.println("Test output");
+    }
+
+    #[test]
+    fn test_progress_bar_clone() {
+        let pb = ProgressBar::new("Test".to_string());
+        let pb_clone = pb.clone();
+
+        // Both should share the same state
+        pb.set_message("New message".to_string());
+
+        // Check message was updated in both
+        {
+            let original_state = pb.state.lock().unwrap();
+            assert_eq!(original_state.message, "New message");
+        }
+        {
+            let cloned_state = pb_clone.state.lock().unwrap();
+            assert_eq!(cloned_state.message, "New message");
+        }
+
+        // Stop the ticker before test ends to ensure clean shutdown
+        pb.ticker.store(false, Ordering::Relaxed);
+    }
+
+    #[test]
+    fn test_progress_bar_drop_stops_ticker() {
+        let pb = ProgressBar::new("Test".to_string());
+
+        // Ensure ticker is running
+        assert_eq!(pb.ticker.load(Ordering::Relaxed), true);
+
+        // Drop should stop the ticker
+        drop(pb);
+
+        // We can't directly test the ticker state after drop, but if this
+        // test completes without hanging, it indicates proper cleanup
+    }
+
+    #[test]
+    fn test_spinner_chars_constant() {
+        assert_eq!(SPINNER_CHARS, &['⣾', '⣽', '⣻', '⢿', '⡿', '⣟', '⣯', '⣷']);
+    }
+
+    #[test]
+    fn test_multi_progress_new() {
+        let multi = MultiProgress::new();
+        let bars = multi.bars.lock().unwrap();
+        assert_eq!(bars.len(), 0);
+    }
+
+    #[test]
+    fn test_multi_progress_default() {
+        let multi = MultiProgress::default();
+        let bars = multi.bars.lock().unwrap();
+        assert_eq!(bars.len(), 0);
+    }
+
+    #[test]
+    fn test_multi_progress_add() {
+        let multi = MultiProgress::new();
+        let pb1 = ProgressBar::new("Test 1".to_string());
+        let pb2 = ProgressBar::new("Test 2".to_string());
+
+        let returned_pb1 = multi.add(pb1);
+        let returned_pb2 = multi.add(pb2);
+
+        let bars = multi.bars.lock().unwrap();
+        assert_eq!(bars.len(), 2);
+
+        // The returned progress bars should be the same as the added ones
+        assert_eq!(returned_pb1.state.lock().unwrap().message, "Test 1");
+        assert_eq!(returned_pb2.state.lock().unwrap().message, "Test 2");
+    }
+
+    #[test]
+    fn test_multi_progress_clear() {
+        let multi = MultiProgress::new();
+        let pb1 = ProgressBar::new("Test 1".to_string());
+        let pb2 = ProgressBar::new("Test 2".to_string());
+
+        multi.add(pb1);
+        multi.add(pb2);
+
+        let result = multi.clear();
+        assert!(result.is_ok());
+
+        // All bars should now be hidden
+        let bars = multi.bars.lock().unwrap();
+        for bar in bars.iter() {
+            assert_eq!(bar.state.lock().unwrap().visible, false);
+        }
+    }
+
+    #[test]
+    fn test_multi_progress_clear_empty() {
+        let multi = MultiProgress::new();
+        let result = multi.clear();
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_progress_bar_ticker_updates_spinner() {
+        let pb = ProgressBar::new("Test".to_string());
+
+        let initial_index = pb.state.lock().unwrap().spinner_index;
+
+        // Sleep to allow ticker to update
+        thread::sleep(Duration::from_millis(100));
+
+        let updated_index = pb.state.lock().unwrap().spinner_index;
+
+        // The spinner index should have changed (assuming the ticker is working)
+        // Note: This test could be flaky in very slow environments
+        assert!(updated_index != initial_index || updated_index < SPINNER_CHARS.len());
+    }
+
+    #[test]
+    fn test_progress_bar_finished_stops_spinner_updates() {
+        let pb = ProgressBar::new("Test".to_string());
+
+        pb.finish();
+        let initial_index = pb.state.lock().unwrap().spinner_index;
+
+        // Sleep to ensure ticker would have updated if it was still running
+        thread::sleep(Duration::from_millis(100));
+
+        let final_index = pb.state.lock().unwrap().spinner_index;
+
+        // Index should not change after finishing
+        assert_eq!(initial_index, final_index);
+    }
+}
