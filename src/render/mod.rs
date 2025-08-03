@@ -186,7 +186,7 @@ mod tests {
     use std::time::Duration;
 
     #[test]
-    fn test_progress_bar_new_creates_with_message() {
+    fn progress_bar_new_creates_with_message() {
         let message = "Test progress bar".to_string();
         let pb = ProgressBar::new(message.clone());
 
@@ -201,7 +201,7 @@ mod tests {
     }
 
     #[test]
-    fn test_progress_bar_set_prefix() {
+    fn progress_bar_set_prefix() {
         let pb = ProgressBar::new("Test".to_string());
         let new_prefix = "✓".to_string();
 
@@ -212,7 +212,7 @@ mod tests {
     }
 
     #[test]
-    fn test_progress_bar_set_message() {
+    fn progress_bar_set_message() {
         let pb = ProgressBar::new("Initial message".to_string());
         let new_message = "Updated message".to_string();
 
@@ -223,7 +223,7 @@ mod tests {
     }
 
     #[test]
-    fn test_progress_bar_hide() {
+    fn progress_bar_hide() {
         let pb = ProgressBar::new("Test".to_string());
 
         pb.hide();
@@ -234,7 +234,7 @@ mod tests {
     }
 
     #[test]
-    fn test_progress_bar_show() {
+    fn progress_bar_show() {
         let pb = ProgressBar::new("Test".to_string());
 
         // First hide it
@@ -250,7 +250,7 @@ mod tests {
     }
 
     #[test]
-    fn test_progress_bar_finish() {
+    fn progress_bar_finish() {
         let pb = ProgressBar::new("Test".to_string());
 
         pb.finish();
@@ -261,7 +261,7 @@ mod tests {
     }
 
     #[test]
-    fn test_progress_bar_println_when_visible() {
+    fn progress_bar_println_when_visible() {
         let pb = ProgressBar::new("Test".to_string());
 
         // This should not panic when the progress bar is visible
@@ -269,7 +269,7 @@ mod tests {
     }
 
     #[test]
-    fn test_progress_bar_println_when_hidden() {
+    fn progress_bar_println_when_hidden() {
         let pb = ProgressBar::new("Test".to_string());
         pb.hide();
 
@@ -278,14 +278,12 @@ mod tests {
     }
 
     #[test]
-    fn test_progress_bar_clone() {
+    fn progress_bar_clone() {
         let pb = ProgressBar::new("Test".to_string());
         let pb_clone = pb.clone();
 
-        // Both should share the same state
         pb.set_message("New message".to_string());
 
-        // Check message was updated in both
         {
             let original_state = pb.state.lock().unwrap();
             assert_eq!(original_state.message, "New message");
@@ -295,18 +293,14 @@ mod tests {
             assert_eq!(cloned_state.message, "New message");
         }
 
-        // Stop the ticker before test ends to ensure clean shutdown
         pb.ticker.store(false, Ordering::Relaxed);
     }
 
     #[test]
-    fn test_progress_bar_drop_stops_ticker() {
+    fn progress_bar_drop_stops_ticker() {
         let pb = ProgressBar::new("Test".to_string());
 
-        // Ensure ticker is running
         assert_eq!(pb.ticker.load(Ordering::Relaxed), true);
-
-        // Drop should stop the ticker
         drop(pb);
 
         // We can't directly test the ticker state after drop, but if this
@@ -314,26 +308,26 @@ mod tests {
     }
 
     #[test]
-    fn test_spinner_chars_constant() {
+    fn spinner_chars_constant() {
         assert_eq!(SPINNER_CHARS, &['⣾', '⣽', '⣻', '⢿', '⡿', '⣟', '⣯', '⣷']);
     }
 
     #[test]
-    fn test_multi_progress_new() {
+    fn multi_progress_new() {
         let multi = MultiProgress::new();
         let bars = multi.bars.lock().unwrap();
         assert_eq!(bars.len(), 0);
     }
 
     #[test]
-    fn test_multi_progress_default() {
+    fn multi_progress_default() {
         let multi = MultiProgress::default();
         let bars = multi.bars.lock().unwrap();
         assert_eq!(bars.len(), 0);
     }
 
     #[test]
-    fn test_multi_progress_add() {
+    fn multi_progress_add() {
         let multi = MultiProgress::new();
         let pb1 = ProgressBar::new("Test 1".to_string());
         let pb2 = ProgressBar::new("Test 2".to_string());
@@ -344,13 +338,12 @@ mod tests {
         let bars = multi.bars.lock().unwrap();
         assert_eq!(bars.len(), 2);
 
-        // The returned progress bars should be the same as the added ones
         assert_eq!(returned_pb1.state.lock().unwrap().message, "Test 1");
         assert_eq!(returned_pb2.state.lock().unwrap().message, "Test 2");
     }
 
     #[test]
-    fn test_multi_progress_clear() {
+    fn multi_progress_clear() {
         let multi = MultiProgress::new();
         let pb1 = ProgressBar::new("Test 1".to_string());
         let pb2 = ProgressBar::new("Test 2".to_string());
@@ -369,14 +362,14 @@ mod tests {
     }
 
     #[test]
-    fn test_multi_progress_clear_empty() {
+    fn multi_progress_clear_empty() {
         let multi = MultiProgress::new();
         let result = multi.clear();
         assert!(result.is_ok());
     }
 
     #[test]
-    fn test_progress_bar_ticker_updates_spinner() {
+    fn progress_bar_ticker_updates_spinner() {
         let pb = ProgressBar::new("Test".to_string());
 
         let initial_index = pb.state.lock().unwrap().spinner_index;
@@ -392,7 +385,7 @@ mod tests {
     }
 
     #[test]
-    fn test_progress_bar_finished_stops_spinner_updates() {
+    fn progress_bar_finished_stops_spinner_updates() {
         let pb = ProgressBar::new("Test".to_string());
 
         pb.finish();

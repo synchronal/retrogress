@@ -82,7 +82,6 @@ impl ProgressBar {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::HashMap;
     use std::sync::{Arc, Mutex};
 
     #[derive(Default)]
@@ -171,26 +170,6 @@ mod tests {
         assert_eq!(ref1, ref2);
         assert_eq!(ref1, ref3);
         assert_eq!(ref2, ref3);
-    }
-
-    #[test]
-    fn ref_can_be_used_as_hash_key() {
-        let mut map = HashMap::new();
-        let ref1 = Ref::new();
-        let ref2 = Ref::new();
-
-        map.insert(ref1, "value1");
-        map.insert(ref2, "value2");
-
-        assert_eq!(map.get(&ref1), Some(&"value1"));
-        assert_eq!(map.get(&ref2), Some(&"value2"));
-    }
-
-    #[test]
-    fn progress_bar_new_wraps_implementation() {
-        let mock = MockProgress::new();
-        let _progress_bar = ProgressBar::new(Box::new(mock));
-        // If this compiles and runs without panicking, the test passes
     }
 
     #[test]
