@@ -1,5 +1,8 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex};
+use std::thread::{self, JoinHandle};
+use std::time::Duration;
 
 /// A reference to a specific progress bar.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -34,6 +37,9 @@ pub trait Progress {
     /// Prints a line of text above a progress bar, without interrupted it.
     /// Helpful when capturing output from commands to show to users.
     fn println(&mut self, reference: Ref, msg: &str);
+    /// Function to rerender the progress bar. This will be called on a
+    /// regular interval.
+    fn render(&mut self);
     /// Update the message shown for a progress bar.
     fn set_message(&mut self, reference: Ref, msg: String);
     /// Shows the given progress bar.
@@ -42,40 +48,122 @@ pub trait Progress {
     fn succeeded(&mut self, reference: Ref);
 }
 
-#[derive(Clone)]
-pub struct ProgressBar(Arc<Mutex<Box<dyn Progress>>>);
+enum ProgressMessage {
+    Tick,
+    Shutdown,
+}
+
+pub struct ProgressBar {
+    progress: Arc<Mutex<Box<dyn Progress>>>,
+    renderer: Arc<Mutex<Option<JoinHandle<()>>>>,
+    sender: Arc<Mutex<Sender<ProgressMessage>>>,
+    ticker: Arc<Mutex<Option<JoinHandle<()>>>>,
+    ref_count: Arc<AtomicUsize>,
+}
 
 unsafe impl std::marker::Send for ProgressBar {}
 unsafe impl std::marker::Sync for ProgressBar {}
 
-impl Progress for ProgressBar {
-    fn append(&mut self, msg: &str) -> Ref {
-        self.0.lock().unwrap().append(msg)
+impl ProgressBar {
+    pub fn new(bar: Box<dyn Progress>) -> Self {
+        let (sender, receiver) = mpsc::channel();
+
+        #[allow(clippy::arc_with_non_send_sync)]
+        let progress = Self {
+            progress: Arc::new(Mutex::new(bar)),
+            renderer: Arc::new(Mutex::new(None)),
+            sender: Arc::new(Mutex::new(sender.clone())),
+            ticker: Arc::new(Mutex::new(None)),
+            ref_count: Arc::new(AtomicUsize::new(1)),
+        };
+
+        let progress_clone = progress.clone();
+        let renderer = thread::spawn(move || {
+            Self::start_renderer(progress_clone, receiver);
+        });
+
+        let ticker_sender = sender.clone();
+        let ticker = thread::spawn(move || loop {
+            thread::sleep(Duration::from_millis(50));
+            if ticker_sender.send(ProgressMessage::Tick).is_err() {
+                break;
+            }
+        });
+
+        {
+            let mut render_handle = progress.renderer.lock().unwrap();
+            *render_handle = Some(renderer);
+        }
+        {
+            let mut ticker_handle = progress.ticker.lock().unwrap();
+            *ticker_handle = Some(ticker);
+        }
+
+        progress
     }
-    fn failed(&mut self, reference: Ref) {
-        self.0.lock().unwrap().failed(reference)
+
+    pub fn append(&mut self, msg: &str) -> Ref {
+        self.progress.lock().unwrap().append(msg)
     }
-    fn hide(&mut self, reference: Ref) {
-        self.0.lock().unwrap().hide(reference)
+    pub fn failed(&mut self, reference: Ref) {
+        self.progress.lock().unwrap().failed(reference)
     }
-    fn println(&mut self, reference: Ref, msg: &str) {
-        self.0.lock().unwrap().println(reference, msg)
+    pub fn hide(&mut self, reference: Ref) {
+        self.progress.lock().unwrap().hide(reference)
     }
-    fn set_message(&mut self, reference: Ref, msg: String) {
-        self.0.lock().unwrap().set_message(reference, msg)
+    pub fn println(&mut self, reference: Ref, msg: &str) {
+        self.progress.lock().unwrap().println(reference, msg)
     }
-    fn show(&mut self, reference: Ref) {
-        self.0.lock().unwrap().show(reference)
+    pub fn set_message(&mut self, reference: Ref, msg: String) {
+        self.progress.lock().unwrap().set_message(reference, msg)
     }
-    fn succeeded(&mut self, reference: Ref) {
-        self.0.lock().unwrap().succeeded(reference)
+    pub fn show(&mut self, reference: Ref) {
+        self.progress.lock().unwrap().show(reference)
+    }
+    pub fn succeeded(&mut self, reference: Ref) {
+        self.progress.lock().unwrap().succeeded(reference)
+    }
+
+    fn start_renderer(progress: ProgressBar, receiver: Receiver<ProgressMessage>) {
+        while let Ok(message) = receiver.recv() {
+            match message {
+                ProgressMessage::Tick => progress.progress.lock().unwrap().render(),
+                ProgressMessage::Shutdown => break,
+            }
+        }
     }
 }
 
-impl ProgressBar {
-    pub fn new(bar: Box<dyn Progress>) -> Self {
-        #[allow(clippy::arc_with_non_send_sync)]
-        Self(Arc::new(Mutex::new(bar)))
+impl Clone for ProgressBar {
+    fn clone(&self) -> Self {
+        self.ref_count.fetch_add(1, Ordering::SeqCst);
+        Self {
+            progress: Arc::clone(&self.progress),
+            renderer: Arc::clone(&self.renderer),
+            sender: Arc::clone(&self.sender),
+            ticker: Arc::clone(&self.ticker),
+            ref_count: Arc::clone(&self.ref_count),
+        }
+    }
+}
+
+impl Drop for ProgressBar {
+    fn drop(&mut self) {
+        let prev_count = self.ref_count.fetch_sub(1, Ordering::SeqCst);
+
+        if prev_count == 1 {
+            let _ = self.sender.lock().unwrap().send(ProgressMessage::Shutdown);
+
+            let mut join_handle = self.ticker.lock().unwrap();
+            if let Some(ticker) = join_handle.take() {
+                let _ = ticker.join();
+            }
+
+            let mut join_handle = self.renderer.lock().unwrap();
+            if let Some(renderer) = join_handle.take() {
+                let _ = renderer.join();
+            }
+        }
     }
 }
 
@@ -125,6 +213,8 @@ mod tests {
                 .unwrap()
                 .push((reference, msg.to_string()));
         }
+
+        fn render(&mut self) {}
 
         fn set_message(&mut self, reference: Ref, msg: String) {
             self.set_message_calls

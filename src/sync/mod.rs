@@ -1,9 +1,10 @@
 use crate::progress::Ref;
-use crate::render::ProgressBar;
+use crate::render::Renderer;
 use crate::Progress;
 
 use console::style;
 use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 
 /// An implementation of `Progress` intended for usages when one
 /// progress bar runs at a time.
@@ -13,7 +14,8 @@ use std::collections::HashMap;
 /// let mut progress = ProgressBar::new(Sync::boxed());
 /// ```
 pub struct Sync {
-    bars: HashMap<Ref, ProgressBar>,
+    bars: Arc<Mutex<HashMap<Ref, Renderer>>>,
+    current: Arc<Mutex<Option<Ref>>>,
 }
 
 impl Sync {
@@ -22,7 +24,8 @@ impl Sync {
         console::set_colors_enabled_stderr(true);
 
         Self {
-            bars: HashMap::new(),
+            bars: Arc::new(Mutex::new(HashMap::new())),
+            current: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -39,40 +42,62 @@ impl Default for Sync {
 
 impl Progress for Sync {
     fn append(&mut self, msg: &str) -> Ref {
-        let pb = ProgressBar::new(msg.to_string());
+        let pb = Renderer::new(msg.to_string());
         let reference = Ref::new();
-        self.bars.insert(reference, pb);
+
+        {
+            let mut current = self.current.lock().unwrap();
+            *current = Some(reference);
+
+            let mut bars = self.bars.lock().unwrap();
+            bars.insert(reference, pb);
+        }
         reference
     }
 
     fn failed(&mut self, reference: Ref) {
-        let pb = self.bars.get(&reference).unwrap();
+        let bars = self.bars.lock().unwrap();
+        let pb = bars.get(&reference).unwrap();
         pb.set_prefix(format!("{}", style("𝗑").bold().bright().red()));
         pb.finish();
     }
 
     fn hide(&mut self, reference: Ref) {
-        let pb = self.bars.get(&reference).unwrap();
+        let bars = self.bars.lock().unwrap();
+        let pb = bars.get(&reference).unwrap();
         pb.hide();
     }
 
     fn println(&mut self, reference: Ref, msg: &str) {
-        let pb = self.bars.get(&reference).unwrap();
+        let bars = self.bars.lock().unwrap();
+        let pb = bars.get(&reference).unwrap();
         pb.println(msg);
     }
 
+    fn render(&mut self) {
+        if let Some(reference) = *self.current.lock().unwrap() {
+            let bars = self.bars.lock().unwrap();
+            let pb = bars.get(&reference).unwrap();
+            pb.tick();
+            pb.render();
+        }
+    }
+
     fn set_message(&mut self, reference: Ref, msg: String) {
-        let pb = self.bars.get(&reference).unwrap();
+        let bars = self.bars.lock().unwrap();
+        let pb = bars.get(&reference).unwrap();
         pb.set_message(msg);
     }
 
     fn show(&mut self, reference: Ref) {
-        let pb = self.bars.get(&reference).unwrap();
+        let bars = self.bars.lock().unwrap();
+        let pb = bars.get(&reference).unwrap();
         pb.show();
     }
 
     fn succeeded(&mut self, reference: Ref) {
-        let pb = self.bars.get(&reference).unwrap();
+        let bars = self.bars.lock().unwrap();
+        let pb = bars.get(&reference).unwrap();
         pb.set_prefix(format!("{}", style("✓").bold().green()));
         pb.finish();
     }
@@ -86,13 +111,13 @@ mod tests {
     #[test]
     fn sync_new_creates_empty_progress_tracker() {
         let sync = Sync::new();
-        assert_eq!(sync.bars.len(), 0);
+        assert_eq!(sync.bars.lock().unwrap().len(), 0);
     }
 
     #[test]
     fn sync_default_creates_empty_progress_tracker() {
         let sync = Sync::default();
-        assert_eq!(sync.bars.len(), 0);
+        assert_eq!(sync.bars.lock().unwrap().len(), 0);
     }
 
     #[test]
@@ -108,9 +133,10 @@ mod tests {
         let ref1 = sync.append("Task 1");
         let ref2 = sync.append("Task 2");
 
-        assert_eq!(sync.bars.len(), 2);
-        assert!(sync.bars.contains_key(&ref1));
-        assert!(sync.bars.contains_key(&ref2));
+        let bars = sync.bars.lock().unwrap();
+        assert_eq!(bars.len(), 2);
+        assert!(bars.contains_key(&ref1));
+        assert!(bars.contains_key(&ref2));
         assert_ne!(ref1, ref2);
     }
 
@@ -125,7 +151,7 @@ mod tests {
         assert_ne!(ref1, ref2);
         assert_ne!(ref2, ref3);
         assert_ne!(ref1, ref3);
-        assert_eq!(sync.bars.len(), 3);
+        assert_eq!(sync.bars.lock().unwrap().len(), 3);
     }
 
     #[test]
@@ -212,7 +238,7 @@ mod tests {
             .map(|i| sync.append(&format!("Task {}", i)))
             .collect();
 
-        assert_eq!(sync.bars.len(), 5);
+        assert_eq!(sync.bars.lock().unwrap().len(), 5);
 
         // Test operations on all progress bars
         for (i, &pb_ref) in refs.iter().enumerate() {

@@ -1,11 +1,12 @@
 use crate::progress::Ref;
-use crate::render::{MultiProgress, ProgressBar};
+use crate::render::{MultiProgress, Renderer};
 use crate::Progress;
 
-use console::style;
+use console::{style, Term};
 use std::collections::HashMap;
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread::{self, JoinHandle};
+use std::time::Duration;
 
 #[derive(Debug)]
 enum ProgressMessage {
@@ -16,27 +17,30 @@ enum ProgressMessage {
     Succeeded { reference: Ref },
     Hide { reference: Ref },
     Show { reference: Ref },
+    Tick,
     Shutdown,
 }
 
 struct ProgressBarState {
-    bar: ProgressBar,
+    bar: Renderer,
     output_buffer: Vec<String>,
 }
 
 /// An implementation of `Progress` designed for parallel execution
 /// where multiple progress bars may output simultaneously.
 ///
-/// Uses indicatif's MultiProgress to coordinate all progress bars and output
-/// through a single background thread, preventing output collision.
+/// Coordinates all progress bars and output through a single background
+/// thread, preventing output collision.
 ///
 /// ```rust
 /// use retrogress::{ProgressBar, Parallel};
 /// let mut progress = ProgressBar::new(Parallel::boxed());
 /// ```
 pub struct Parallel {
+    pub console_size: (u16, u16),
     message_sender: Sender<ProgressMessage>,
     worker_thread: Option<JoinHandle<()>>,
+    ticker_thread: Option<JoinHandle<()>>,
 }
 
 impl Parallel {
@@ -44,14 +48,26 @@ impl Parallel {
         console::set_colors_enabled(true);
         console::set_colors_enabled_stderr(true);
 
+        let console_size = console::Term::stdout().size();
+
         let (sender, receiver) = mpsc::channel();
         let worker_thread = Some(thread::spawn(move || {
             Self::progress_worker(receiver);
         }));
 
+        let ticker_sender = sender.clone();
+        let ticker_thread = Some(thread::spawn(move || loop {
+            thread::sleep(Duration::from_millis(50));
+            if ticker_sender.send(ProgressMessage::Tick).is_err() {
+                break;
+            }
+        }));
+
         Self {
+            console_size,
             message_sender: sender,
             worker_thread,
+            ticker_thread,
         }
     }
 
@@ -62,11 +78,13 @@ impl Parallel {
     fn progress_worker(receiver: Receiver<ProgressMessage>) {
         let multi_progress = MultiProgress::new();
         let mut bars: HashMap<Ref, ProgressBarState> = HashMap::new();
+        let mut bar_order: Vec<Ref> = Vec::new();
+        let mut initial_position_saved = false;
 
         while let Ok(message) = receiver.recv() {
             match message {
                 ProgressMessage::Append { reference, message } => {
-                    let pb = ProgressBar::new(message);
+                    let pb = Renderer::new(message);
                     let bar = multi_progress.add(pb);
 
                     bars.insert(
@@ -76,12 +94,18 @@ impl Parallel {
                             output_buffer: Vec::new(),
                         },
                     );
+                    bar_order.push(reference);
+
+                    if !initial_position_saved {
+                        // Save cursor position when first progress bar is created
+                        Term::stderr().write_str("\x1B[s").ok();
+                        initial_position_saved = true;
+                    }
                 }
                 ProgressMessage::Println { reference, message } => {
                     if let Some(state) = bars.get_mut(&reference) {
-                        // Store in buffer and print immediately
-                        state.output_buffer.push(message.clone());
-                        state.bar.println(&message);
+                        // Store in buffer instead of printing immediately
+                        state.output_buffer.push(message);
                     }
                 }
                 ProgressMessage::SetMessage { reference, message } => {
@@ -115,14 +139,45 @@ impl Parallel {
                         state.bar.show();
                     }
                 }
+                ProgressMessage::Tick => {
+                    if initial_position_saved {
+                        Self::render_all(&bars, &bar_order);
+                    }
+                }
                 ProgressMessage::Shutdown => {
                     break;
                 }
             }
         }
 
-        // Clear any remaining progress bars
         multi_progress.clear().ok();
+    }
+
+    fn render_all(bars: &HashMap<Ref, ProgressBarState>, bar_order: &[Ref]) {
+        let term = Term::stderr();
+
+        // Restore cursor to saved position
+        term.write_str("\x1B[u").ok();
+
+        // Clear from cursor to end of screen
+        term.write_str("\x1B[J").ok();
+
+        // Render all output buffers and progress bars in order
+        for reference in bar_order {
+            if let Some(state) = bars.get(reference) {
+                // Print buffered output lines
+                for line in &state.output_buffer {
+                    eprintln!("{line}");
+                }
+
+                // Update spinner and render the progress bar
+                state.bar.tick();
+                state.bar.render();
+                eprintln!(); // Move to next line after progress bar
+            }
+        }
+
+        term.flush().ok();
     }
 }
 
@@ -139,6 +194,11 @@ impl Drop for Parallel {
 
         // Wait for worker thread to finish
         if let Some(handle) = self.worker_thread.take() {
+            let _ = handle.join();
+        }
+
+        // Wait for ticker thread to finish
+        if let Some(handle) = self.ticker_thread.take() {
             let _ = handle.join();
         }
     }
@@ -172,6 +232,8 @@ impl Progress for Parallel {
             message: msg.to_string(),
         });
     }
+
+    fn render(&mut self) {}
 
     fn set_message(&mut self, reference: Ref, msg: String) {
         let _ = self.message_sender.send(ProgressMessage::SetMessage {
@@ -376,6 +438,7 @@ mod tests {
             ProgressMessage::Succeeded { reference: pb_ref },
             ProgressMessage::Hide { reference: pb_ref },
             ProgressMessage::Show { reference: pb_ref },
+            ProgressMessage::Tick,
             ProgressMessage::Shutdown,
         ];
 
