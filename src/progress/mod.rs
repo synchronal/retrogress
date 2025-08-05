@@ -1,3 +1,4 @@
+use console::Term;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex};
@@ -66,6 +67,7 @@ unsafe impl std::marker::Sync for ProgressBar {}
 
 impl ProgressBar {
     pub fn new(bar: Box<dyn Progress>) -> Self {
+        let _ = Term::stdout().hide_cursor();
         let (sender, receiver) = mpsc::channel();
 
         #[allow(clippy::arc_with_non_send_sync)]
@@ -163,6 +165,7 @@ impl Drop for ProgressBar {
             if let Some(renderer) = join_handle.take() {
                 let _ = renderer.join();
             }
+            let _ = Term::stdout().show_cursor();
         }
     }
 }
