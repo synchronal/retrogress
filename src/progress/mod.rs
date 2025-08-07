@@ -68,6 +68,7 @@ unsafe impl std::marker::Sync for ProgressBar {}
 impl ProgressBar {
     pub fn new(bar: Box<dyn Progress>) -> Self {
         let _ = Term::stdout().hide_cursor();
+        let _ = Term::stderr().hide_cursor();
         let (sender, receiver) = mpsc::channel();
 
         #[allow(clippy::arc_with_non_send_sync)]
@@ -165,8 +166,9 @@ impl Drop for ProgressBar {
             if let Some(renderer) = join_handle.take() {
                 let _ = renderer.join();
             }
-            let _ = Term::stdout().show_cursor();
         }
+        let _ = Term::stdout().show_cursor();
+        let _ = Term::stderr().show_cursor();
     }
 }
 
