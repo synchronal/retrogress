@@ -2,7 +2,6 @@ use crate::progress::Ref;
 use crate::render::Renderer;
 use crate::Progress;
 
-use console::style;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
@@ -58,8 +57,9 @@ impl Progress for Sync {
     fn failed(&mut self, reference: Ref) {
         let bars = self.bars.lock().unwrap();
         let pb = bars.get(&reference).unwrap();
-        pb.set_prefix(format!("{}", style("𝗑").bold().bright().red()));
-        pb.finish();
+        pb.failed();
+        pb.render();
+        eprintln!();
     }
 
     fn hide(&mut self, reference: Ref) {
@@ -72,6 +72,7 @@ impl Progress for Sync {
         let bars = self.bars.lock().unwrap();
         let pb = bars.get(&reference).unwrap();
         pb.println(msg);
+        pb.render();
     }
 
     fn render(&mut self) {
@@ -87,19 +88,24 @@ impl Progress for Sync {
         let bars = self.bars.lock().unwrap();
         let pb = bars.get(&reference).unwrap();
         pb.set_message(msg);
+        pb.render();
+        eprintln!();
     }
 
     fn show(&mut self, reference: Ref) {
         let bars = self.bars.lock().unwrap();
         let pb = bars.get(&reference).unwrap();
         pb.show();
+        pb.render();
+        eprintln!();
     }
 
     fn succeeded(&mut self, reference: Ref) {
         let bars = self.bars.lock().unwrap();
         let pb = bars.get(&reference).unwrap();
-        pb.set_prefix(format!("{}", style("✓").bold().green()));
-        pb.finish();
+        pb.succeeded();
+        pb.render();
+        eprintln!();
     }
 }
 
@@ -234,16 +240,14 @@ mod tests {
     fn sync_multiple_append_and_operations() {
         let mut sync = Sync::new();
 
-        let refs: Vec<_> = (0..5)
-            .map(|i| sync.append(&format!("Task {}", i)))
-            .collect();
+        let refs: Vec<_> = (0..5).map(|i| sync.append(&format!("Task {i}"))).collect();
 
         assert_eq!(sync.bars.lock().unwrap().len(), 5);
 
         // Test operations on all progress bars
         for (i, &pb_ref) in refs.iter().enumerate() {
-            sync.set_message(pb_ref, format!("Updated task {}", i));
-            sync.println(pb_ref, &format!("Output from task {}", i));
+            sync.set_message(pb_ref, format!("Updated task {i}"));
+            sync.println(pb_ref, &format!("Output from task {i}"));
 
             if i % 2 == 0 {
                 sync.succeeded(pb_ref);

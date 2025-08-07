@@ -1,12 +1,12 @@
 use crate::progress::Ref;
-use crate::render::{MultiProgress, Renderer};
+use crate::render::Renderer;
 use crate::Progress;
 
-use console::{style, Term};
+use console::Term;
 use std::collections::HashMap;
 use std::sync::mpsc::{self, Receiver, Sender};
+use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
-use std::time::Duration;
 
 #[derive(Debug)]
 enum ProgressMessage {
@@ -17,13 +17,19 @@ enum ProgressMessage {
     Succeeded { reference: Ref },
     Hide { reference: Ref },
     Show { reference: Ref },
-    Tick,
     Shutdown,
 }
 
 struct ProgressBarState {
     bar: Renderer,
     output_buffer: Vec<String>,
+}
+
+#[derive(Default)]
+struct State {
+    bars: HashMap<Ref, ProgressBarState>,
+    bar_order: Vec<Ref>,
+    initial_position_saved: bool,
 }
 
 /// An implementation of `Progress` designed for parallel execution
@@ -40,7 +46,7 @@ pub struct Parallel {
     pub console_size: (u16, u16),
     message_sender: Sender<ProgressMessage>,
     worker_thread: Option<JoinHandle<()>>,
-    ticker_thread: Option<JoinHandle<()>>,
+    state: Arc<Mutex<State>>,
 }
 
 impl Parallel {
@@ -49,25 +55,19 @@ impl Parallel {
         console::set_colors_enabled_stderr(true);
 
         let console_size = console::Term::stdout().size();
+        let state = Arc::new(Mutex::new(State::default()));
 
         let (sender, receiver) = mpsc::channel();
+        let state_clone = Arc::clone(&state);
         let worker_thread = Some(thread::spawn(move || {
-            Self::progress_worker(receiver);
-        }));
-
-        let ticker_sender = sender.clone();
-        let ticker_thread = Some(thread::spawn(move || loop {
-            thread::sleep(Duration::from_millis(50));
-            if ticker_sender.send(ProgressMessage::Tick).is_err() {
-                break;
-            }
+            Self::progress_worker(receiver, state_clone);
         }));
 
         Self {
             console_size,
             message_sender: sender,
             worker_thread,
-            ticker_thread,
+            state,
         }
     }
 
@@ -75,73 +75,64 @@ impl Parallel {
         Box::new(Self::new())
     }
 
-    fn progress_worker(receiver: Receiver<ProgressMessage>) {
-        let multi_progress = MultiProgress::new();
-        let mut bars: HashMap<Ref, ProgressBarState> = HashMap::new();
-        let mut bar_order: Vec<Ref> = Vec::new();
-        let mut initial_position_saved = false;
-
+    fn progress_worker(receiver: Receiver<ProgressMessage>, state: Arc<Mutex<State>>) {
         while let Ok(message) = receiver.recv() {
+            let mut shared_state = state.lock().unwrap();
             match message {
                 ProgressMessage::Append { reference, message } => {
                     let pb = Renderer::new(message);
-                    let bar = multi_progress.add(pb);
 
-                    bars.insert(
+                    shared_state.bars.insert(
                         reference,
                         ProgressBarState {
-                            bar,
+                            bar: pb,
                             output_buffer: Vec::new(),
                         },
                     );
-                    bar_order.push(reference);
+                    shared_state.bar_order.push(reference);
 
-                    if !initial_position_saved {
+                    if !shared_state.initial_position_saved {
                         // Save cursor position when first progress bar is created
-                        Term::stderr().write_str("\x1B[s").ok();
-                        initial_position_saved = true;
-                    }
-                }
-                ProgressMessage::Println { reference, message } => {
-                    if let Some(state) = bars.get_mut(&reference) {
-                        // Store in buffer instead of printing immediately
-                        state.output_buffer.push(message);
-                    }
-                }
-                ProgressMessage::SetMessage { reference, message } => {
-                    if let Some(state) = bars.get(&reference) {
-                        state.bar.set_message(message);
+                        Term::stderr().write_str("\x1b[s").ok();
+                        shared_state.initial_position_saved = true;
                     }
                 }
                 ProgressMessage::Failed { reference } => {
-                    if let Some(state) = bars.get(&reference) {
-                        state
-                            .bar
-                            .set_prefix(format!("{}", style("𝗑").bold().bright().red()));
-                        state.bar.finish();
-                    }
-                }
-                ProgressMessage::Succeeded { reference } => {
-                    if let Some(state) = bars.get(&reference) {
-                        state
-                            .bar
-                            .set_prefix(format!("{}", style("✓").bold().green()));
-                        state.bar.finish();
+                    if let Some(bar_state) = shared_state.bars.get(&reference) {
+                        bar_state.bar.failed();
                     }
                 }
                 ProgressMessage::Hide { reference } => {
-                    if let Some(state) = bars.get(&reference) {
-                        state.bar.hide();
+                    if let Some(bar_state) = shared_state.bars.get(&reference) {
+                        bar_state.bar.hide();
+                    }
+                }
+                ProgressMessage::Println { reference, message } => {
+                    if let Some(bar_state) = shared_state.bars.get_mut(&reference) {
+                        // Store in buffer instead of printing immediately
+                        bar_state.output_buffer.push(message);
+
+                        // Trim buffer to keep only the last 1000 lines
+                        if bar_state.output_buffer.len() > 1000 {
+                            bar_state
+                                .output_buffer
+                                .drain(0..bar_state.output_buffer.len() - 1000);
+                        }
+                    }
+                }
+                ProgressMessage::SetMessage { reference, message } => {
+                    if let Some(bar_state) = shared_state.bars.get(&reference) {
+                        bar_state.bar.set_message(message);
                     }
                 }
                 ProgressMessage::Show { reference } => {
-                    if let Some(state) = bars.get(&reference) {
-                        state.bar.show();
+                    if let Some(bar_state) = shared_state.bars.get(&reference) {
+                        bar_state.bar.show();
                     }
                 }
-                ProgressMessage::Tick => {
-                    if initial_position_saved {
-                        Self::render_all(&bars, &bar_order);
+                ProgressMessage::Succeeded { reference } => {
+                    if let Some(bar_state) = shared_state.bars.get(&reference) {
+                        bar_state.bar.succeeded();
                     }
                 }
                 ProgressMessage::Shutdown => {
@@ -149,35 +140,6 @@ impl Parallel {
                 }
             }
         }
-
-        multi_progress.clear().ok();
-    }
-
-    fn render_all(bars: &HashMap<Ref, ProgressBarState>, bar_order: &[Ref]) {
-        let term = Term::stderr();
-
-        // Restore cursor to saved position
-        term.write_str("\x1B[u").ok();
-
-        // Clear from cursor to end of screen
-        term.write_str("\x1B[J").ok();
-
-        // Render all output buffers and progress bars in order
-        for reference in bar_order {
-            if let Some(state) = bars.get(reference) {
-                // Print buffered output lines
-                for line in &state.output_buffer {
-                    eprintln!("{line}");
-                }
-
-                // Update spinner and render the progress bar
-                state.bar.tick();
-                state.bar.render();
-                eprintln!(); // Move to next line after progress bar
-            }
-        }
-
-        term.flush().ok();
     }
 }
 
@@ -189,18 +151,13 @@ impl Default for Parallel {
 
 impl Drop for Parallel {
     fn drop(&mut self) {
-        // Signal shutdown to worker thread
         let _ = self.message_sender.send(ProgressMessage::Shutdown);
 
-        // Wait for worker thread to finish
         if let Some(handle) = self.worker_thread.take() {
             let _ = handle.join();
         }
 
-        // Wait for ticker thread to finish
-        if let Some(handle) = self.ticker_thread.take() {
-            let _ = handle.join();
-        }
+        self.render();
     }
 }
 
@@ -233,7 +190,38 @@ impl Progress for Parallel {
         });
     }
 
-    fn render(&mut self) {}
+    fn render(&mut self) {
+        let mut shared_state = self.state.lock().unwrap();
+
+        if !shared_state.initial_position_saved {
+            return;
+        }
+
+        let term = Term::stderr();
+
+        term.write_str("\x1b[u").ok(); // restore cursor
+        term.write_str("\x1b[J").ok(); // clear to end
+
+        let bar_order = shared_state.bar_order.clone();
+        for reference in &bar_order {
+            if let Some(bar_state) = shared_state.bars.get_mut(reference) {
+                let start_idx = if bar_state.output_buffer.len() > 5 {
+                    bar_state.output_buffer.len() - 5
+                } else {
+                    0
+                };
+                for line in &bar_state.output_buffer[start_idx..] {
+                    eprintln!("{line}");
+                }
+
+                bar_state.bar.tick();
+                bar_state.bar.render();
+                eprintln!();
+            }
+        }
+
+        term.flush().ok();
+    }
 
     fn set_message(&mut self, reference: Ref, msg: String) {
         let _ = self.message_sender.send(ProgressMessage::SetMessage {
@@ -260,6 +248,7 @@ mod tests {
     use super::*;
     use crate::Progress;
     use std::thread;
+    use std::time::Duration;
 
     #[test]
     fn parallel_new_creates_worker_thread() {
@@ -326,12 +315,12 @@ mod tests {
         let mut parallel = Parallel::new();
 
         let refs: Vec<_> = (0..5)
-            .map(|i| parallel.append(&format!("Task {}", i)))
+            .map(|i| parallel.append(&format!("Task {i}")))
             .collect();
 
         for (i, &pb_ref) in refs.iter().enumerate() {
-            parallel.set_message(pb_ref, format!("Updated task {}", i));
-            parallel.println(pb_ref, &format!("Output from task {}", i));
+            parallel.set_message(pb_ref, format!("Updated task {i}"));
+            parallel.println(pb_ref, &format!("Output from task {i}"));
 
             if i % 2 == 0 {
                 parallel.succeeded(pb_ref);
@@ -438,12 +427,11 @@ mod tests {
             ProgressMessage::Succeeded { reference: pb_ref },
             ProgressMessage::Hide { reference: pb_ref },
             ProgressMessage::Show { reference: pb_ref },
-            ProgressMessage::Tick,
             ProgressMessage::Shutdown,
         ];
 
         for message in messages {
-            let debug_str = format!("{:?}", message);
+            let debug_str = format!("{message:?}");
             assert!(!debug_str.is_empty());
         }
     }
@@ -466,6 +454,43 @@ mod tests {
     }
 
     #[test]
+    fn parallel_render_sends_tick_message() {
+        let mut parallel = Parallel::new();
+        let pb_ref = parallel.append("Test task");
+
+        // Calling render should send a Tick message
+        parallel.render();
+
+        // Add a small delay to allow the worker thread to process
+        thread::sleep(Duration::from_millis(100));
+
+        parallel.succeeded(pb_ref);
+    }
+
+    #[test]
+    fn parallel_render_with_multiple_progress_bars() {
+        let mut parallel = Parallel::new();
+
+        let pb1 = parallel.append("Task 1");
+        let pb2 = parallel.append("Task 2");
+        let pb3 = parallel.append("Task 3");
+
+        parallel.set_message(pb1, "Processing task 1".to_string());
+        parallel.set_message(pb2, "Processing task 2".to_string());
+        parallel.set_message(pb3, "Processing task 3".to_string());
+
+        // Call render multiple times
+        for _ in 0..3 {
+            parallel.render();
+            thread::sleep(Duration::from_millis(50));
+        }
+
+        parallel.succeeded(pb1);
+        parallel.failed(pb2);
+        parallel.succeeded(pb3);
+    }
+
+    #[test]
     fn parallel_concurrent_access() {
         use std::sync::{Arc, Barrier};
 
@@ -481,14 +506,14 @@ mod tests {
             for i in 0..10 {
                 let _ = sender.send(ProgressMessage::SetMessage {
                     reference: pb_ref,
-                    message: format!("Thread message {}", i),
+                    message: format!("Thread message {i}"),
                 });
             }
             barrier_clone.wait();
         });
 
         for i in 0..10 {
-            parallel.set_message(pb_ref, format!("Main message {}", i));
+            parallel.set_message(pb_ref, format!("Main message {i}"));
         }
 
         barrier.wait();
@@ -584,11 +609,11 @@ mod tests {
 
                 for i in 0..operations_per_thread {
                     parallel_clone
-                        .set_message(pb_ref, format!("Thread {}: Operation {}", thread_id, i));
+                        .set_message(pb_ref, format!("Thread {thread_id}: Operation {i}"));
 
                     if i % 10 == 0 {
                         parallel_clone
-                            .println(pb_ref, &format!("Thread {} checkpoint {}", thread_id, i));
+                            .println(pb_ref, &format!("Thread {thread_id} checkpoint {i}"));
                     }
 
                     if i % 20 == 0 {
@@ -640,13 +665,13 @@ mod tests {
                     0 => {
                         for i in 0..25 {
                             parallel_clone
-                                .set_message(pb_ref, format!("Setter thread {}: {}", thread_id, i));
+                                .set_message(pb_ref, format!("Setter thread {thread_id}: {i}"));
                         }
                     }
                     1 => {
                         for i in 0..25 {
                             parallel_clone
-                                .println(pb_ref, &format!("Printer thread {}: {}", thread_id, i));
+                                .println(pb_ref, &format!("Printer thread {thread_id}: {i}"));
                         }
                     }
                     2 => {
@@ -661,9 +686,9 @@ mod tests {
                     3 => {
                         for i in 0..25 {
                             parallel_clone
-                                .set_message(pb_ref, format!("Mixed thread {}: {}", thread_id, i));
+                                .set_message(pb_ref, format!("Mixed thread {thread_id}: {i}"));
                             parallel_clone
-                                .println(pb_ref, &format!("Mixed output {}: {}", thread_id, i));
+                                .println(pb_ref, &format!("Mixed output {thread_id}: {i}"));
                         }
                     }
                     _ => unreachable!(),
@@ -698,7 +723,7 @@ mod tests {
 
         let mut pb_refs = vec![];
         for i in 0..num_progress_bars {
-            pb_refs.push(parallel.append(&format!("Load test bar {}", i)));
+            pb_refs.push(parallel.append(&format!("Load test bar {i}")));
         }
 
         let start_time = Instant::now();
@@ -724,12 +749,11 @@ mod tests {
 
                 for pb_ref in &pb_refs_clone[start_idx..end_idx] {
                     for op in 0..operations_per_bar {
-                        parallel_clone
-                            .set_message(*pb_ref, format!("Thread {} op {}", thread_id, op));
+                        parallel_clone.set_message(*pb_ref, format!("Thread {thread_id} op {op}"));
 
                         if op % 5 == 0 {
                             parallel_clone
-                                .println(*pb_ref, &format!("T{} checkpoint {}", thread_id, op));
+                                .println(*pb_ref, &format!("T{thread_id} checkpoint {op}"));
                         }
                     }
 
@@ -754,10 +778,9 @@ mod tests {
 
         assert!(
             duration.as_secs() < 5,
-            "High load test took too long: {:?}",
-            duration
+            "High load test took too long: {duration:?}"
         );
 
-        println!("High load test completed in {:?}", duration);
+        println!("High load test completed in {duration:?}");
     }
 }

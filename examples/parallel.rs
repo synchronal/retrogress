@@ -9,9 +9,9 @@ fn main() {
     // Spawn multiple threads with progress bars
     for i in 1..=5 {
         let mut progress_clone = progress.clone();
-        let handle = thread::spawn(move || {
-            let pb = progress_clone.append(&format!("Thread {i} working"));
+        let pb = progress_clone.append(&format!("Thread {i} working"));
 
+        let handle = thread::spawn(move || {
             // Simulate work with progress updates
             for j in 1..=5 {
                 thread::sleep(time::Duration::from_millis(500));

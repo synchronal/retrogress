@@ -131,7 +131,9 @@ impl ProgressBar {
         while let Ok(message) = receiver.recv() {
             match message {
                 ProgressMessage::Tick => progress.progress.lock().unwrap().render(),
-                ProgressMessage::Shutdown => break,
+                ProgressMessage::Shutdown => {
+                    break;
+                }
             }
         }
     }
@@ -153,10 +155,9 @@ impl Clone for ProgressBar {
 impl Drop for ProgressBar {
     fn drop(&mut self) {
         let prev_count = self.ref_count.fetch_sub(1, Ordering::SeqCst);
+        let _ = self.sender.lock().unwrap().send(ProgressMessage::Shutdown);
 
         if prev_count == 1 {
-            let _ = self.sender.lock().unwrap().send(ProgressMessage::Shutdown);
-
             let mut join_handle = self.ticker.lock().unwrap();
             if let Some(ticker) = join_handle.take() {
                 let _ = ticker.join();
@@ -260,7 +261,7 @@ mod tests {
     fn ref_is_copy_and_clone() {
         let ref1 = Ref::new();
         let ref2 = ref1; // Copy
-        let ref3 = ref1.clone(); // Clone
+        let ref3 = ref1; // Clone
 
         assert_eq!(ref1, ref2);
         assert_eq!(ref1, ref3);

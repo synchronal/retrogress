@@ -29,6 +29,11 @@ impl Renderer {
         Renderer { state }
     }
 
+    pub fn failed(&self) {
+        self.set_prefix(format!("{}", style("𝗑").bold().bright().red()));
+        self.finish();
+    }
+
     pub fn set_prefix(&self, prefix: String) {
         let mut state = self.state.lock().unwrap();
         state.prefix = prefix;
@@ -38,7 +43,6 @@ impl Renderer {
         let mut state = self.state.lock().unwrap();
         state.message = message;
         drop(state);
-        self.render();
     }
 
     pub fn println(&self, msg: &str) {
@@ -47,7 +51,6 @@ impl Renderer {
             Term::stderr().clear_line().unwrap();
             eprintln!("{msg}");
             drop(state);
-            self.render();
         }
     }
 
@@ -60,17 +63,17 @@ impl Renderer {
     pub fn show(&self) {
         let mut state = self.state.lock().unwrap();
         state.visible = true;
-        drop(state);
-        self.render();
     }
 
     pub fn finish(&self) {
         let mut state = self.state.lock().unwrap();
         state.finished = true;
         drop(state);
+    }
 
-        self.render();
-        eprintln!();
+    pub fn succeeded(&self) {
+        self.set_prefix(format!("{}", style("✓").bold().green()));
+        self.finish();
     }
 
     pub fn tick(&self) {
@@ -78,6 +81,11 @@ impl Renderer {
         if state.visible && !state.finished {
             state.spinner_index = (state.spinner_index + 1) % SPINNER_CHARS.len();
         }
+    }
+
+    pub fn debug_state(&self) -> (bool, String) {
+        let state = self.state.lock().unwrap();
+        (state.finished, state.prefix.clone())
     }
 
     pub fn render(&self) {
@@ -99,38 +107,6 @@ impl Renderer {
     }
 }
 
-pub struct MultiProgress {
-    bars: Arc<Mutex<Vec<Renderer>>>,
-}
-
-impl MultiProgress {
-    pub fn new() -> Self {
-        MultiProgress {
-            bars: Arc::new(Mutex::new(Vec::new())),
-        }
-    }
-
-    pub fn add(&self, bar: Renderer) -> Renderer {
-        let mut bars = self.bars.lock().unwrap();
-        bars.push(bar.clone());
-        bar
-    }
-
-    pub fn clear(&self) -> Result<(), std::io::Error> {
-        let bars = self.bars.lock().unwrap();
-        for bar in bars.iter() {
-            bar.hide();
-        }
-        Ok(())
-    }
-}
-
-impl Default for MultiProgress {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -143,8 +119,8 @@ mod tests {
         let state = pb.state.lock().unwrap();
         assert_eq!(state.message, message);
         assert_eq!(state.spinner_index, 0);
-        assert_eq!(state.visible, true);
-        assert_eq!(state.finished, false);
+        assert!(state.visible);
+        assert!(!state.finished);
     }
 
     #[test]
@@ -176,7 +152,7 @@ mod tests {
         pb.hide();
 
         let state = pb.state.lock().unwrap();
-        assert_eq!(state.visible, false);
+        assert!(!state.visible);
     }
 
     #[test]
@@ -185,13 +161,13 @@ mod tests {
 
         // First hide it
         pb.hide();
-        assert_eq!(pb.state.lock().unwrap().visible, false);
+        assert!(!pb.state.lock().unwrap().visible);
 
         // Then show it
         pb.show();
 
         let state = pb.state.lock().unwrap();
-        assert_eq!(state.visible, true);
+        assert!(state.visible);
     }
 
     #[test]
@@ -201,7 +177,7 @@ mod tests {
         pb.finish();
 
         let state = pb.state.lock().unwrap();
-        assert_eq!(state.finished, true);
+        assert!(state.finished);
     }
 
     #[test]
@@ -241,62 +217,6 @@ mod tests {
     #[test]
     fn spinner_chars_constant() {
         assert_eq!(SPINNER_CHARS, &['⣾', '⣽', '⣻', '⢿', '⡿', '⣟', '⣯', '⣷']);
-    }
-
-    #[test]
-    fn multi_progress_new() {
-        let multi = MultiProgress::new();
-        let bars = multi.bars.lock().unwrap();
-        assert_eq!(bars.len(), 0);
-    }
-
-    #[test]
-    fn multi_progress_default() {
-        let multi = MultiProgress::default();
-        let bars = multi.bars.lock().unwrap();
-        assert_eq!(bars.len(), 0);
-    }
-
-    #[test]
-    fn multi_progress_add() {
-        let multi = MultiProgress::new();
-        let pb1 = Renderer::new("Test 1".to_string());
-        let pb2 = Renderer::new("Test 2".to_string());
-
-        let returned_pb1 = multi.add(pb1);
-        let returned_pb2 = multi.add(pb2);
-
-        let bars = multi.bars.lock().unwrap();
-        assert_eq!(bars.len(), 2);
-
-        assert_eq!(returned_pb1.state.lock().unwrap().message, "Test 1");
-        assert_eq!(returned_pb2.state.lock().unwrap().message, "Test 2");
-    }
-
-    #[test]
-    fn multi_progress_clear() {
-        let multi = MultiProgress::new();
-        let pb1 = Renderer::new("Test 1".to_string());
-        let pb2 = Renderer::new("Test 2".to_string());
-
-        multi.add(pb1);
-        multi.add(pb2);
-
-        let result = multi.clear();
-        assert!(result.is_ok());
-
-        // All bars should now be hidden
-        let bars = multi.bars.lock().unwrap();
-        for bar in bars.iter() {
-            assert_eq!(bar.state.lock().unwrap().visible, false);
-        }
-    }
-
-    #[test]
-    fn multi_progress_clear_empty() {
-        let multi = MultiProgress::new();
-        let result = multi.clear();
-        assert!(result.is_ok());
     }
 
     #[test]
