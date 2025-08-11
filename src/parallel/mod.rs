@@ -78,9 +78,9 @@ impl Parallel {
 
     fn progress_worker(receiver: Receiver<ProgressMessage>, state: Arc<Mutex<State>>) {
         while let Ok(message) = receiver.recv() {
-            let mut state = state.lock().unwrap();
             match message {
                 ProgressMessage::Append { reference, message } => {
+                    let mut state = state.lock().unwrap();
                     let pb = Renderer::new(message);
 
                     state.bars.insert(
@@ -93,14 +93,17 @@ impl Parallel {
                     state.running.push(reference);
                 }
                 ProgressMessage::Failed { reference } => {
+                    let state = state.lock().unwrap();
                     let bar = state.bars.get(&reference).unwrap();
                     bar.bar.failed();
                 }
                 ProgressMessage::Hide { reference } => {
+                    let state = state.lock().unwrap();
                     let bar = state.bars.get(&reference).unwrap();
                     bar.bar.hide();
                 }
                 ProgressMessage::Println { reference, message } => {
+                    let mut state = state.lock().unwrap();
                     let bar = state.bars.get_mut(&reference).unwrap();
                     bar.output_buffer.push(message);
 
@@ -110,14 +113,17 @@ impl Parallel {
                     }
                 }
                 ProgressMessage::SetMessage { reference, message } => {
+                    let state = state.lock().unwrap();
                     let bar = state.bars.get(&reference).unwrap();
                     bar.bar.set_message(message);
                 }
                 ProgressMessage::Show { reference } => {
+                    let state = state.lock().unwrap();
                     let bar = state.bars.get(&reference).unwrap();
                     bar.bar.show();
                 }
                 ProgressMessage::Succeeded { reference } => {
+                    let mut state = state.lock().unwrap();
                     let bar = state.bars.get(&reference).unwrap();
                     bar.bar.succeeded();
 
