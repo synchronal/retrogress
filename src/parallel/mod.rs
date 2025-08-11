@@ -28,8 +28,8 @@ struct ProgressBarState {
 #[derive(Default)]
 struct State {
     bars: HashMap<Ref, ProgressBarState>,
-    bar_order: Vec<Ref>,
     initial_position_saved: bool,
+    running: Vec<Ref>,
 }
 
 /// An implementation of `Progress` designed for parallel execution
@@ -89,7 +89,7 @@ impl Parallel {
                             output_buffer: Vec::new(),
                         },
                     );
-                    shared_state.bar_order.push(reference);
+                    shared_state.running.push(reference);
 
                     if !shared_state.initial_position_saved {
                         // Save cursor position when first progress bar is created
@@ -98,42 +98,35 @@ impl Parallel {
                     }
                 }
                 ProgressMessage::Failed { reference } => {
-                    if let Some(bar_state) = shared_state.bars.get(&reference) {
-                        bar_state.bar.failed();
-                    }
+                    let bar_state = shared_state.bars.get(&reference).unwrap();
+                    bar_state.bar.failed();
                 }
                 ProgressMessage::Hide { reference } => {
-                    if let Some(bar_state) = shared_state.bars.get(&reference) {
-                        bar_state.bar.hide();
-                    }
+                    let bar_state = shared_state.bars.get(&reference).unwrap();
+                    bar_state.bar.hide();
                 }
                 ProgressMessage::Println { reference, message } => {
-                    if let Some(bar_state) = shared_state.bars.get_mut(&reference) {
-                        // Store in buffer instead of printing immediately
-                        bar_state.output_buffer.push(message);
+                    let bar_state = shared_state.bars.get_mut(&reference).unwrap();
+                    bar_state.output_buffer.push(message);
 
-                        // Trim buffer to keep only the last 1000 lines
-                        if bar_state.output_buffer.len() > 1000 {
-                            bar_state
-                                .output_buffer
-                                .drain(0..bar_state.output_buffer.len() - 1000);
-                        }
+                    // Trim buffer to keep only the last 1000 lines
+                    if bar_state.output_buffer.len() > 1000 {
+                        bar_state
+                            .output_buffer
+                            .drain(0..bar_state.output_buffer.len() - 1000);
                     }
                 }
                 ProgressMessage::SetMessage { reference, message } => {
-                    if let Some(bar_state) = shared_state.bars.get(&reference) {
-                        bar_state.bar.set_message(message);
-                    }
+                    let bar_state = shared_state.bars.get(&reference).unwrap();
+                    bar_state.bar.set_message(message);
                 }
                 ProgressMessage::Show { reference } => {
-                    if let Some(bar_state) = shared_state.bars.get(&reference) {
-                        bar_state.bar.show();
-                    }
+                    let bar_state = shared_state.bars.get(&reference).unwrap();
+                    bar_state.bar.show();
                 }
                 ProgressMessage::Succeeded { reference } => {
-                    if let Some(bar_state) = shared_state.bars.get(&reference) {
-                        bar_state.bar.succeeded();
-                    }
+                    let bar_state = shared_state.bars.get(&reference).unwrap();
+                    bar_state.bar.succeeded();
                 }
                 ProgressMessage::Shutdown => {
                     break;
@@ -202,7 +195,7 @@ impl Progress for Parallel {
         term.write_str("\x1b[u").ok(); // restore cursor
         term.write_str("\x1b[J").ok(); // clear to end
 
-        let bar_order = shared_state.bar_order.clone();
+        let bar_order = shared_state.running.clone();
         for reference in &bar_order {
             if let Some(bar_state) = shared_state.bars.get_mut(reference) {
                 let start_idx = if bar_state.output_buffer.len() > 5 {

@@ -24,6 +24,12 @@ impl Default for Ref {
     }
 }
 
+impl std::fmt::Display for Ref {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "#Ref<{}>", self.0)
+    }
+}
+
 /// Progress is a trait that may be implemented to create new progress bar
 /// behaviors. Its normal usage is as a `Box<dyn Progress>` that can be
 /// put into a `ProgressBar`.
