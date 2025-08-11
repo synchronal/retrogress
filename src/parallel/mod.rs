@@ -30,6 +30,7 @@ struct State {
     bars: HashMap<Ref, ProgressBarState>,
     initial_position_saved: bool,
     running: Vec<Ref>,
+    succeeded: Vec<Ref>,
 }
 
 /// An implementation of `Progress` designed for parallel execution
@@ -77,56 +78,57 @@ impl Parallel {
 
     fn progress_worker(receiver: Receiver<ProgressMessage>, state: Arc<Mutex<State>>) {
         while let Ok(message) = receiver.recv() {
-            let mut shared_state = state.lock().unwrap();
+            let mut state = state.lock().unwrap();
             match message {
                 ProgressMessage::Append { reference, message } => {
                     let pb = Renderer::new(message);
 
-                    shared_state.bars.insert(
+                    state.bars.insert(
                         reference,
                         ProgressBarState {
                             bar: pb,
                             output_buffer: Vec::new(),
                         },
                     );
-                    shared_state.running.push(reference);
+                    state.running.push(reference);
 
-                    if !shared_state.initial_position_saved {
+                    if !state.initial_position_saved {
                         // Save cursor position when first progress bar is created
                         Term::stderr().write_str("\x1b[s").ok();
-                        shared_state.initial_position_saved = true;
+                        state.initial_position_saved = true;
                     }
                 }
                 ProgressMessage::Failed { reference } => {
-                    let bar_state = shared_state.bars.get(&reference).unwrap();
-                    bar_state.bar.failed();
+                    let bar = state.bars.get(&reference).unwrap();
+                    bar.bar.failed();
                 }
                 ProgressMessage::Hide { reference } => {
-                    let bar_state = shared_state.bars.get(&reference).unwrap();
-                    bar_state.bar.hide();
+                    let bar = state.bars.get(&reference).unwrap();
+                    bar.bar.hide();
                 }
                 ProgressMessage::Println { reference, message } => {
-                    let bar_state = shared_state.bars.get_mut(&reference).unwrap();
-                    bar_state.output_buffer.push(message);
+                    let bar = state.bars.get_mut(&reference).unwrap();
+                    bar.output_buffer.push(message);
 
                     // Trim buffer to keep only the last 1000 lines
-                    if bar_state.output_buffer.len() > 1000 {
-                        bar_state
-                            .output_buffer
-                            .drain(0..bar_state.output_buffer.len() - 1000);
+                    if bar.output_buffer.len() > 1000 {
+                        bar.output_buffer.drain(0..bar.output_buffer.len() - 1000);
                     }
                 }
                 ProgressMessage::SetMessage { reference, message } => {
-                    let bar_state = shared_state.bars.get(&reference).unwrap();
-                    bar_state.bar.set_message(message);
+                    let bar = state.bars.get(&reference).unwrap();
+                    bar.bar.set_message(message);
                 }
                 ProgressMessage::Show { reference } => {
-                    let bar_state = shared_state.bars.get(&reference).unwrap();
-                    bar_state.bar.show();
+                    let bar = state.bars.get(&reference).unwrap();
+                    bar.bar.show();
                 }
                 ProgressMessage::Succeeded { reference } => {
-                    let bar_state = shared_state.bars.get(&reference).unwrap();
-                    bar_state.bar.succeeded();
+                    let bar = state.bars.get(&reference).unwrap();
+                    bar.bar.succeeded();
+
+                    state.running.retain(|x| *x != reference);
+                    state.succeeded.push(reference);
                 }
                 ProgressMessage::Shutdown => {
                     break;
@@ -184,9 +186,9 @@ impl Progress for Parallel {
     }
 
     fn render(&mut self) {
-        let mut shared_state = self.state.lock().unwrap();
+        let mut state = self.state.lock().unwrap();
 
-        if !shared_state.initial_position_saved {
+        if !state.initial_position_saved {
             return;
         }
 
@@ -195,22 +197,28 @@ impl Progress for Parallel {
         term.write_str("\x1b[u").ok(); // restore cursor
         term.write_str("\x1b[J").ok(); // clear to end
 
-        let bar_order = shared_state.running.clone();
-        for reference in &bar_order {
-            if let Some(bar_state) = shared_state.bars.get_mut(reference) {
-                let start_idx = if bar_state.output_buffer.len() > 5 {
-                    bar_state.output_buffer.len() - 5
-                } else {
-                    0
-                };
-                for line in &bar_state.output_buffer[start_idx..] {
-                    eprintln!("{line}");
-                }
+        let succeeded = state.succeeded.clone();
+        for reference in &succeeded {
+            let bar_state = state.bars.get_mut(reference).unwrap();
+            bar_state.bar.render();
+            eprintln!();
+        }
 
-                bar_state.bar.tick();
-                bar_state.bar.render();
-                eprintln!();
+        let running = state.running.clone();
+        for reference in &running {
+            let bar_state = state.bars.get_mut(reference).unwrap();
+            let start_idx = if bar_state.output_buffer.len() > 5 {
+                bar_state.output_buffer.len() - 5
+            } else {
+                0
+            };
+            for line in &bar_state.output_buffer[start_idx..] {
+                eprintln!("{line}");
             }
+
+            bar_state.bar.tick();
+            bar_state.bar.render();
+            eprintln!();
         }
 
         term.flush().ok();

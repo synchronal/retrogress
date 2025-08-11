@@ -24,8 +24,7 @@ fn main() {
                 }
             }
 
-            // Some threads succeed, some fail
-            if i % 3 == 0 {
+            if i == 2 {
                 progress_clone.failed(pb);
             } else {
                 progress_clone.succeeded(pb);
