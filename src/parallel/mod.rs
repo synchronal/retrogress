@@ -28,7 +28,7 @@ struct ProgressBarState {
 #[derive(Default)]
 struct State {
     bars: HashMap<Ref, ProgressBarState>,
-    initial_position_saved: bool,
+    output_buffer_length: usize,
     running: Vec<Ref>,
     succeeded: Vec<Ref>,
 }
@@ -91,12 +91,6 @@ impl Parallel {
                         },
                     );
                     state.running.push(reference);
-
-                    if !state.initial_position_saved {
-                        // Save cursor position when first progress bar is created
-                        Term::stderr().write_str("\x1b[s").ok();
-                        state.initial_position_saved = true;
-                    }
                 }
                 ProgressMessage::Failed { reference } => {
                     let bar = state.bars.get(&reference).unwrap();
@@ -188,20 +182,24 @@ impl Progress for Parallel {
     fn render(&mut self) {
         let mut state = self.state.lock().unwrap();
 
-        if !state.initial_position_saved {
-            return;
-        }
-
         let term = Term::stderr();
 
-        term.write_str("\x1b[u").ok(); // restore cursor
-        term.write_str("\x1b[J").ok(); // clear to end
+        if state.output_buffer_length > 0 {
+            // Backtrack cursor to the start
+            term.write_str(&format!("\x1b[{}A", state.output_buffer_length))
+                .ok();
+            term.write_str("\x1b[0G").ok(); // Beginning of line
+            term.write_str("\x1b[J").ok(); // Clear to end
+        }
+
+        let mut lines_rendered = 0;
 
         let succeeded = state.succeeded.clone();
         for reference in &succeeded {
             let bar_state = state.bars.get_mut(reference).unwrap();
             bar_state.bar.render();
             eprintln!();
+            lines_rendered += 1;
         }
 
         let running = state.running.clone();
@@ -214,13 +212,16 @@ impl Progress for Parallel {
             };
             for line in &bar_state.output_buffer[start_idx..] {
                 eprintln!("{line}");
+                lines_rendered += 1;
             }
 
             bar_state.bar.tick();
             bar_state.bar.render();
             eprintln!();
+            lines_rendered += 1;
         }
 
+        state.output_buffer_length = lines_rendered;
         term.flush().ok();
     }
 
