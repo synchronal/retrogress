@@ -33,7 +33,7 @@ impl std::fmt::Display for Ref {
 /// Progress is a trait that may be implemented to create new progress bar
 /// behaviors. Its normal usage is as a `Box<dyn Progress>` that can be
 /// put into a `ProgressBar`.
-pub trait Progress {
+pub trait Progress: Send + Sync {
     /// Append a new progress bar to the console. Returns a `usize` that
     /// serves as a reference to the progress bar in other functions.
     fn append(&mut self, msg: &str) -> Ref;
@@ -65,30 +65,36 @@ pub struct ProgressBar {
     renderer: Arc<Mutex<Option<JoinHandle<()>>>>,
     sender: Arc<Mutex<Sender<ProgressMessage>>>,
     ticker: Arc<Mutex<Option<JoinHandle<()>>>>,
-    ref_count: Arc<AtomicUsize>,
+    counter: *mut Counter,
 }
+
+struct Counter(AtomicUsize);
 
 unsafe impl std::marker::Send for ProgressBar {}
 unsafe impl std::marker::Sync for ProgressBar {}
 
 impl ProgressBar {
+    fn counter(&self) -> &Counter {
+        unsafe { &*self.counter }
+    }
+
     pub fn new(bar: Box<dyn Progress>) -> Self {
         let _ = Term::stdout().hide_cursor();
         let _ = Term::stderr().hide_cursor();
         let (sender, receiver) = mpsc::channel();
+        let counter = Box::into_raw(Box::new(Counter(AtomicUsize::new(1))));
+        let progress = Arc::new(Mutex::new(bar));
 
-        #[allow(clippy::arc_with_non_send_sync)]
-        let progress = Self {
-            progress: Arc::new(Mutex::new(bar)),
+        let progress_bar = Self {
+            progress: progress.clone(),
             renderer: Arc::new(Mutex::new(None)),
             sender: Arc::new(Mutex::new(sender.clone())),
             ticker: Arc::new(Mutex::new(None)),
-            ref_count: Arc::new(AtomicUsize::new(1)),
+            counter,
         };
 
-        let progress_clone = progress.clone();
         let renderer = thread::spawn(move || {
-            Self::start_renderer(progress_clone, receiver);
+            Self::start_renderer(progress, receiver);
         });
 
         let ticker_sender = sender.clone();
@@ -100,15 +106,15 @@ impl ProgressBar {
         });
 
         {
-            let mut render_handle = progress.renderer.lock().unwrap();
+            let mut render_handle = progress_bar.renderer.lock().unwrap();
             *render_handle = Some(renderer);
         }
         {
-            let mut ticker_handle = progress.ticker.lock().unwrap();
+            let mut ticker_handle = progress_bar.ticker.lock().unwrap();
             *ticker_handle = Some(ticker);
         }
 
-        progress
+        progress_bar
     }
 
     pub fn append(&mut self, msg: &str) -> Ref {
@@ -133,10 +139,13 @@ impl ProgressBar {
         self.progress.lock().unwrap().succeeded(reference)
     }
 
-    fn start_renderer(progress: ProgressBar, receiver: Receiver<ProgressMessage>) {
+    fn start_renderer(
+        progress: Arc<Mutex<Box<dyn Progress>>>,
+        receiver: Receiver<ProgressMessage>,
+    ) {
         while let Ok(message) = receiver.recv() {
             match message {
-                ProgressMessage::Tick => progress.progress.lock().unwrap().render(),
+                ProgressMessage::Tick => progress.lock().unwrap().render(),
                 ProgressMessage::Shutdown => {
                     break;
                 }
@@ -147,23 +156,23 @@ impl ProgressBar {
 
 impl Clone for ProgressBar {
     fn clone(&self) -> Self {
-        self.ref_count.fetch_add(1, Ordering::SeqCst);
+        self.counter().0.fetch_add(1, Ordering::Relaxed);
         Self {
             progress: Arc::clone(&self.progress),
             renderer: Arc::clone(&self.renderer),
             sender: Arc::clone(&self.sender),
             ticker: Arc::clone(&self.ticker),
-            ref_count: Arc::clone(&self.ref_count),
+            counter: self.counter,
         }
     }
 }
 
 impl Drop for ProgressBar {
     fn drop(&mut self) {
-        let prev_count = self.ref_count.fetch_sub(1, Ordering::SeqCst);
-        let _ = self.sender.lock().unwrap().send(ProgressMessage::Shutdown);
+        let counter = self.counter().0.fetch_sub(1, Ordering::AcqRel);
+        if counter == 1 {
+            let _ = self.sender.lock().unwrap().send(ProgressMessage::Shutdown);
 
-        if prev_count == 1 {
             let mut join_handle = self.ticker.lock().unwrap();
             if let Some(ticker) = join_handle.take() {
                 let _ = ticker.join();
@@ -173,9 +182,10 @@ impl Drop for ProgressBar {
             if let Some(renderer) = join_handle.take() {
                 let _ = renderer.join();
             }
+
+            let _ = Term::stdout().show_cursor();
+            let _ = Term::stderr().show_cursor();
         }
-        let _ = Term::stdout().show_cursor();
-        let _ = Term::stderr().show_cursor();
     }
 }
 

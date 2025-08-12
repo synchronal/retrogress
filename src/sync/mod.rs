@@ -17,6 +17,9 @@ pub struct Sync {
     current: Arc<Mutex<Option<Ref>>>,
 }
 
+unsafe impl std::marker::Send for Sync {}
+unsafe impl std::marker::Sync for Sync {}
+
 impl Sync {
     pub fn new() -> Self {
         console::set_colors_enabled(true);

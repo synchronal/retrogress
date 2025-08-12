@@ -50,6 +50,9 @@ pub struct Parallel {
     state: Arc<Mutex<State>>,
 }
 
+unsafe impl std::marker::Send for Parallel {}
+unsafe impl std::marker::Sync for Parallel {}
+
 impl Parallel {
     pub fn new() -> Self {
         console::set_colors_enabled(true);
