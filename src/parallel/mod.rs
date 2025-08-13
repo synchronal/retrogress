@@ -192,13 +192,13 @@ impl Progress for Parallel {
         let mut state = self.state.lock().unwrap();
 
         let term = Term::stderr();
+        let mut output_buffer = String::new();
 
         if state.output_buffer_length > 0 {
             // Backtrack cursor to the start
-            term.write_str(&format!("\x1b[{}A", state.output_buffer_length))
-                .ok();
-            term.write_str("\x1b[0G").ok(); // Beginning of line
-            term.write_str("\x1b[J").ok(); // Clear to end
+            output_buffer.push_str(&format!("\x1b[{}A", state.output_buffer_length));
+            output_buffer.push_str("\x1b[0G"); // Beginning of line
+            output_buffer.push_str("\x1b[J"); // Clear to end
         }
 
         let mut lines_rendered = 0;
@@ -206,9 +206,12 @@ impl Progress for Parallel {
         let succeeded = state.succeeded.clone();
         for reference in &succeeded {
             let bar_state = state.bars.get_mut(reference).unwrap();
-            bar_state.bar.render();
-            eprintln!();
-            lines_rendered += 1;
+            let rendered = bar_state.bar.to_string();
+            if !rendered.is_empty() {
+                output_buffer.push_str(&rendered);
+                output_buffer.push('\n');
+                lines_rendered += 1;
+            }
         }
 
         let running = state.running.clone();
@@ -220,17 +223,23 @@ impl Progress for Parallel {
                 0
             };
             for line in &bar_state.output_buffer[start_idx..] {
-                eprintln!("{line}");
+                output_buffer.push_str(line);
+                output_buffer.push('\n');
                 lines_rendered += 1;
             }
 
             bar_state.bar.tick();
-            bar_state.bar.render();
-            eprintln!();
-            lines_rendered += 1;
+            let rendered = bar_state.bar.to_string();
+            if !rendered.is_empty() {
+                output_buffer.push_str(&rendered);
+                output_buffer.push('\n');
+                lines_rendered += 1;
+            }
         }
 
         state.output_buffer_length = lines_rendered;
+
+        eprint!("{}", output_buffer);
         term.flush().ok();
     }
 

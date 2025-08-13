@@ -99,7 +99,7 @@ impl ProgressBar {
 
         let ticker_sender = sender.clone();
         let ticker = thread::spawn(move || loop {
-            thread::sleep(Duration::from_millis(50));
+            thread::sleep(Duration::from_millis(80));
             if ticker_sender.send(ProgressMessage::Tick).is_err() {
                 break;
             }

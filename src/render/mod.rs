@@ -16,6 +16,21 @@ struct RendererState {
     finished: bool,
 }
 
+impl std::fmt::Display for RendererState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if !self.visible {
+            return write!(f, "");
+        }
+
+        if self.finished {
+            write!(f, "{} {}", self.prefix, self.message)
+        } else {
+            let spinner = SPINNER_CHARS[self.spinner_index];
+            write!(f, "{} {} {}", self.prefix, spinner, self.message)
+        }
+    }
+}
+
 impl Renderer {
     pub fn new(message: String) -> Self {
         let state = Arc::new(Mutex::new(RendererState {
@@ -104,6 +119,13 @@ impl Renderer {
         }
 
         Term::stderr().flush().unwrap();
+    }
+}
+
+impl std::fmt::Display for Renderer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let state = self.state.lock().unwrap();
+        write!(f, "{state}")
     }
 }
 
