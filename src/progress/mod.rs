@@ -44,6 +44,9 @@ pub trait Progress: Send + Sync {
     /// Prints a line of text above a progress bar, without interrupted it.
     /// Helpful when capturing output from commands to show to users.
     fn println(&mut self, reference: Ref, msg: &str);
+    /// Prints out the message as a prompt. Ensures that the entire prompt
+    /// is printed.
+    fn prompt(&mut self, msg: &str) -> String;
     /// Function to rerender the progress bar. This will be called on a
     /// regular interval.
     fn render(&mut self);
@@ -81,6 +84,7 @@ impl ProgressBar {
     pub fn new(bar: Box<dyn Progress>) -> Self {
         let _ = Term::stdout().hide_cursor();
         let _ = Term::stderr().hide_cursor();
+
         let (sender, receiver) = mpsc::channel();
         let counter = Box::into_raw(Box::new(Counter(AtomicUsize::new(1))));
         let progress = Arc::new(Mutex::new(bar));
@@ -128,6 +132,9 @@ impl ProgressBar {
     }
     pub fn println(&mut self, reference: Ref, msg: &str) {
         self.progress.lock().unwrap().println(reference, msg)
+    }
+    pub fn prompt(&mut self, msg: &str) -> String {
+        self.progress.lock().unwrap().prompt(msg)
     }
     pub fn set_message(&mut self, reference: Ref, msg: String) {
         self.progress.lock().unwrap().set_message(reference, msg)
@@ -198,11 +205,12 @@ mod tests {
     struct MockProgress {
         appended: Arc<Mutex<Vec<(Ref, String)>>>,
         failed_refs: Arc<Mutex<Vec<Ref>>>,
-        succeeded_refs: Arc<Mutex<Vec<Ref>>>,
         hidden_refs: Arc<Mutex<Vec<Ref>>>,
-        shown_refs: Arc<Mutex<Vec<Ref>>>,
         println_calls: Arc<Mutex<Vec<(Ref, String)>>>,
+        prompt_calls: Arc<Mutex<Vec<String>>>,
         set_message_calls: Arc<Mutex<Vec<(Ref, String)>>>,
+        shown_refs: Arc<Mutex<Vec<Ref>>>,
+        succeeded_refs: Arc<Mutex<Vec<Ref>>>,
     }
 
     impl MockProgress {
@@ -234,6 +242,11 @@ mod tests {
                 .lock()
                 .unwrap()
                 .push((reference, msg.to_string()));
+        }
+
+        fn prompt(&mut self, msg: &str) -> String {
+            self.prompt_calls.lock().unwrap().push(msg.to_string());
+            "reply".into()
         }
 
         fn render(&mut self) {}

@@ -111,12 +111,7 @@ impl Renderer {
 
         Term::stderr().clear_line().unwrap();
 
-        if state.finished {
-            eprint!("{} {}", state.prefix, state.message);
-        } else {
-            let spinner = SPINNER_CHARS[state.spinner_index];
-            eprint!("{} {} {}", state.prefix, spinner, state.message);
-        }
+        eprint!("{}", state);
 
         Term::stderr().flush().unwrap();
     }
