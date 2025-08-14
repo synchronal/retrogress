@@ -10,14 +10,14 @@ use std::thread::{self, JoinHandle};
 
 #[derive(Debug)]
 enum ProgressMessage {
-    Append { reference: Ref, message: String },
+    Append(Ref, String),
     ClearPrompt,
     Failed(Ref),
-    Hide { reference: Ref },
-    Println { reference: Ref, message: String },
+    Hide(Ref),
+    Println(Ref, String),
     Prompt(String),
-    SetMessage { reference: Ref, message: String },
-    Show { reference: Ref },
+    SetMessage(Ref, String),
+    Show(Ref),
     Shutdown,
     Succeeded(Ref),
 }
@@ -83,7 +83,7 @@ impl Parallel {
     fn progress_worker(receiver: Receiver<ProgressMessage>, state: Arc<Mutex<State>>) {
         while let Ok(message) = receiver.recv() {
             match message {
-                ProgressMessage::Append { reference, message } => {
+                ProgressMessage::Append(reference, message) => {
                     let mut state = state.lock().unwrap();
                     let pb = Renderer::new(message);
 
@@ -108,12 +108,12 @@ impl Parallel {
                     state.running.retain(|x| *x != reference);
                     state.failed.push(reference);
                 }
-                ProgressMessage::Hide { reference } => {
+                ProgressMessage::Hide(reference) => {
                     let state = state.lock().unwrap();
                     let bar = state.bars.get(&reference).unwrap();
                     bar.bar.hide();
                 }
-                ProgressMessage::Println { reference, message } => {
+                ProgressMessage::Println(reference, message) => {
                     let mut state = state.lock().unwrap();
                     let bar = state.bars.get_mut(&reference).unwrap();
                     bar.output_buffer.push(message);
@@ -127,12 +127,12 @@ impl Parallel {
                     let mut state = state.lock().unwrap();
                     state.prompt = Some(message);
                 }
-                ProgressMessage::SetMessage { reference, message } => {
+                ProgressMessage::SetMessage(reference, message) => {
                     let state = state.lock().unwrap();
                     let bar = state.bars.get(&reference).unwrap();
                     bar.bar.set_message(message);
                 }
-                ProgressMessage::Show { reference } => {
+                ProgressMessage::Show(reference) => {
                     let state = state.lock().unwrap();
                     let bar = state.bars.get(&reference).unwrap();
                     bar.bar.show();
@@ -174,10 +174,9 @@ impl Drop for Parallel {
 impl Progress for Parallel {
     fn append(&mut self, msg: &str) -> Ref {
         let reference = Ref::new();
-        let _ = self.message_sender.send(ProgressMessage::Append {
-            reference,
-            message: msg.to_string(),
-        });
+        let _ = self
+            .message_sender
+            .send(ProgressMessage::Append(reference, msg.to_string()));
         reference
     }
 
@@ -186,16 +185,13 @@ impl Progress for Parallel {
     }
 
     fn hide(&mut self, reference: Ref) {
-        let _ = self
-            .message_sender
-            .send(ProgressMessage::Hide { reference });
+        let _ = self.message_sender.send(ProgressMessage::Hide(reference));
     }
 
     fn println(&mut self, reference: Ref, msg: &str) {
-        let _ = self.message_sender.send(ProgressMessage::Println {
-            reference,
-            message: msg.to_string(),
-        });
+        let _ = self
+            .message_sender
+            .send(ProgressMessage::Println(reference, msg.to_string()));
     }
 
     fn prompt(&mut self, msg: &str) -> String {
@@ -304,16 +300,13 @@ impl Progress for Parallel {
     }
 
     fn set_message(&mut self, reference: Ref, msg: String) {
-        let _ = self.message_sender.send(ProgressMessage::SetMessage {
-            reference,
-            message: msg,
-        });
+        let _ = self
+            .message_sender
+            .send(ProgressMessage::SetMessage(reference, msg));
     }
 
     fn show(&mut self, reference: Ref) {
-        let _ = self
-            .message_sender
-            .send(ProgressMessage::Show { reference });
+        let _ = self.message_sender.send(ProgressMessage::Show(reference));
     }
 
     fn succeeded(&mut self, reference: Ref) {
@@ -437,28 +430,25 @@ mod tests {
 
         assert!(parallel
             .message_sender
-            .send(ProgressMessage::SetMessage {
-                reference: pb_ref,
-                message: "Test message".to_string(),
-            })
+            .send(ProgressMessage::SetMessage(
+                pb_ref,
+                "Test message".to_string(),
+            ))
             .is_ok());
 
         assert!(parallel
             .message_sender
-            .send(ProgressMessage::Println {
-                reference: pb_ref,
-                message: "Test output".to_string(),
-            })
+            .send(ProgressMessage::Println(pb_ref, "Test output".to_string(),))
             .is_ok());
 
         assert!(parallel
             .message_sender
-            .send(ProgressMessage::Hide { reference: pb_ref })
+            .send(ProgressMessage::Hide(pb_ref))
             .is_ok());
 
         assert!(parallel
             .message_sender
-            .send(ProgressMessage::Show { reference: pb_ref })
+            .send(ProgressMessage::Show(pb_ref))
             .is_ok());
 
         assert!(parallel
@@ -491,22 +481,13 @@ mod tests {
         let pb_ref = Ref::new();
 
         let messages = vec![
-            ProgressMessage::Append {
-                reference: pb_ref,
-                message: "test".to_string(),
-            },
-            ProgressMessage::Println {
-                reference: pb_ref,
-                message: "test".to_string(),
-            },
-            ProgressMessage::SetMessage {
-                reference: pb_ref,
-                message: "test".to_string(),
-            },
+            ProgressMessage::Append(pb_ref, "test".to_string()),
+            ProgressMessage::Println(pb_ref, "test".to_string()),
+            ProgressMessage::SetMessage(pb_ref, "test".to_string()),
             ProgressMessage::Failed(pb_ref),
             ProgressMessage::Succeeded(pb_ref),
-            ProgressMessage::Hide { reference: pb_ref },
-            ProgressMessage::Show { reference: pb_ref },
+            ProgressMessage::Hide(pb_ref),
+            ProgressMessage::Show(pb_ref),
             ProgressMessage::Shutdown,
         ];
 
@@ -584,10 +565,10 @@ mod tests {
 
         let handle = thread::spawn(move || {
             for i in 0..10 {
-                let _ = sender.send(ProgressMessage::SetMessage {
-                    reference: pb_ref,
-                    message: format!("Thread message {i}"),
-                });
+                let _ = sender.send(ProgressMessage::SetMessage(
+                    pb_ref,
+                    format!("Thread message {i}"),
+                ));
             }
             barrier_clone.wait();
         });
@@ -626,16 +607,16 @@ mod tests {
             let _ = handle.join();
         }
 
-        let result1 = parallel.message_sender.send(ProgressMessage::SetMessage {
-            reference: pb_ref,
-            message: "This will fail".to_string(),
-        });
+        let result1 = parallel.message_sender.send(ProgressMessage::SetMessage(
+            pb_ref,
+            "This will fail".to_string(),
+        ));
         assert!(result1.is_err());
 
-        let result2 = parallel.message_sender.send(ProgressMessage::Println {
-            reference: pb_ref,
-            message: "This will also fail".to_string(),
-        });
+        let result2 = parallel.message_sender.send(ProgressMessage::Println(
+            pb_ref,
+            "This will also fail".to_string(),
+        ));
         assert!(result2.is_err());
 
         parallel.set_message(pb_ref, "API call after channel failure".to_string());
