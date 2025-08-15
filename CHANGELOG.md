@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 1.0.0
+
 - Add required `prompt`, `clear_prompt`, and `set_prompt_input` to
   `Progress` trait.
 - Introduce `retrogress::Parallel` progress bar.
