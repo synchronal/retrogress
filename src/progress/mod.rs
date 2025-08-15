@@ -54,6 +54,8 @@ pub trait Progress: Send + Sync {
     fn render(&mut self);
     /// Update the message shown for a progress bar.
     fn set_message(&mut self, reference: Ref, msg: String);
+    /// When input is received during a prompt, the current state of the
+    /// received input will be passed into this on each key press.
     fn set_prompt_input(&mut self, input: String);
     /// Shows the given progress bar.
     fn show(&mut self, reference: Ref);
