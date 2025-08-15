@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Add required `prompt`, `clear_prompt`, and `set_prompt_input` to
+  `Progress` trait.
+- Introduce `retrogress::Parallel` progress bar.
 - Remove dependency on indicatif.
 
 ## 0.2.1
