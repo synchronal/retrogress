@@ -17,6 +17,7 @@ enum ProgressMessage {
     Println(Ref, String),
     Prompt(String),
     SetMessage(Ref, String),
+    SetPromptInput(String),
     Show(Ref),
     Shutdown,
     Succeeded(Ref),
@@ -33,6 +34,7 @@ struct State {
     failed: Vec<Ref>,
     output_buffer_length: usize,
     prompt: Option<String>,
+    prompt_input: Option<String>,
     running: Vec<Ref>,
     succeeded: Vec<Ref>,
 }
@@ -99,6 +101,7 @@ impl Parallel {
                 ProgressMessage::ClearPrompt => {
                     let mut state = state.lock().unwrap();
                     state.prompt = None;
+                    state.prompt_input = None;
                 }
                 ProgressMessage::Failed(reference) => {
                     let mut state = state.lock().unwrap();
@@ -131,6 +134,10 @@ impl Parallel {
                     let state = state.lock().unwrap();
                     let bar = state.bars.get(&reference).unwrap();
                     bar.bar.set_message(message);
+                }
+                ProgressMessage::SetPromptInput(input) => {
+                    let mut state = state.lock().unwrap();
+                    state.prompt_input = Some(input);
                 }
                 ProgressMessage::Show(reference) => {
                     let state = state.lock().unwrap();
@@ -291,6 +298,9 @@ impl Progress for Parallel {
                     lines_rendered += 1;
                 }
             }
+            if let Some(prompt_input) = state.prompt_input.clone() {
+                output_buffer.push_str(&prompt_input);
+            }
         }
 
         eprint!("{}", output_buffer);
@@ -308,6 +318,12 @@ impl Progress for Parallel {
         let _ = self
             .message_sender
             .send(ProgressMessage::SetMessage(reference, msg));
+    }
+
+    fn set_prompt_input(&mut self, input: String) {
+        let _ = self
+            .message_sender
+            .send(ProgressMessage::SetPromptInput(input));
     }
 
     fn show(&mut self, reference: Ref) {

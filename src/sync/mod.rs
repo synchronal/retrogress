@@ -1,7 +1,7 @@
 use crate::progress::Ref;
 use crate::render::Renderer;
 use crate::Progress;
-
+use console::Term;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
@@ -15,6 +15,7 @@ use std::sync::{Arc, Mutex};
 pub struct Sync {
     bars: Arc<Mutex<HashMap<Ref, Renderer>>>,
     current: Arc<Mutex<Option<Ref>>>,
+    prompt: Option<String>,
 }
 
 impl Sync {
@@ -25,6 +26,7 @@ impl Sync {
         Self {
             bars: Arc::new(Mutex::new(HashMap::new())),
             current: Arc::new(Mutex::new(None)),
+            prompt: None,
         }
     }
 
@@ -55,7 +57,9 @@ impl Progress for Sync {
     }
 
     fn clear_prompt(&mut self) {
-        let _ = console::Term::stderr().hide_cursor();
+        self.prompt = None;
+        eprintln!();
+        let _ = Term::stderr().hide_cursor();
     }
 
     fn failed(&mut self, reference: Ref) {
@@ -83,8 +87,9 @@ impl Progress for Sync {
     }
 
     fn prompt(&mut self, msg: &str) {
+        self.prompt = Some(msg.into());
         eprint!("{}", msg);
-        let _ = console::Term::stderr().show_cursor();
+        let _ = Term::stderr().show_cursor();
     }
 
     fn render(&mut self) {
@@ -102,6 +107,14 @@ impl Progress for Sync {
         pb.set_message(msg);
         pb.render();
         eprintln!();
+    }
+
+    fn set_prompt_input(&mut self, input: String) {
+        Term::stderr().clear_line().unwrap();
+        if let Some(prompt) = &self.prompt {
+            eprint!("{prompt}");
+        }
+        eprint!("{input}");
     }
 
     fn show(&mut self, reference: Ref) {

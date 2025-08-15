@@ -38,5 +38,7 @@ fn main() {
         handle.join().unwrap();
     }
 
-    let _ = progress.prompt("Here is a prompt for you to type something > ");
+    let input = progress.prompt("Here is a prompt for you to type something > ");
+    drop(progress);
+    println!("Received input: {input}");
 }

@@ -1,4 +1,4 @@
-use console::Term;
+use console::{Key, Term};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex};
@@ -54,6 +54,7 @@ pub trait Progress: Send + Sync {
     fn render(&mut self);
     /// Update the message shown for a progress bar.
     fn set_message(&mut self, reference: Ref, msg: String);
+    fn set_prompt_input(&mut self, input: String);
     /// Shows the given progress bar.
     fn show(&mut self, reference: Ref);
     /// Mark the given progress bar as succeeded.
@@ -137,7 +138,7 @@ impl ProgressBar {
     }
     pub fn prompt(&mut self, msg: &str) -> String {
         self.progress.lock().unwrap().prompt(msg);
-        let input = console::Term::stdout().read_line().unwrap_or("".into());
+        let input = self.read_input();
         self.progress.lock().unwrap().clear_prompt();
         input.trim().into()
     }
@@ -163,6 +164,31 @@ impl ProgressBar {
                 }
             }
         }
+    }
+
+    fn read_input(&mut self) -> String {
+        let term = Term::stdout();
+        let mut input = String::new();
+
+        loop {
+            match term.read_key().unwrap() {
+                Key::Enter => break,
+                Key::Char(c) => {
+                    input.push(c);
+                }
+                Key::Backspace => {
+                    if !input.is_empty() {
+                        input.pop();
+                    }
+                }
+                _ => {}
+            }
+            self.progress
+                .lock()
+                .unwrap()
+                .set_prompt_input(input.clone());
+        }
+        input
     }
 }
 
@@ -263,6 +289,8 @@ mod tests {
                 .unwrap()
                 .push((reference, msg));
         }
+
+        fn set_prompt_input(&mut self, _input: String) {}
 
         fn show(&mut self, reference: Ref) {
             self.shown_refs.lock().unwrap().push(reference);
