@@ -23,20 +23,28 @@ enum ProgressMessage {
     Succeeded(Ref),
 }
 
+#[derive(Default, Eq, PartialEq)]
+enum Status {
+    Failed,
+    #[default]
+    Running,
+    Succeded,
+}
+
 struct ProgressBarState {
     bar: Renderer,
     output_buffer: Vec<String>,
+    status: Status,
 }
 
 #[derive(Default)]
 struct State {
     bars: HashMap<Ref, ProgressBarState>,
-    failed: Vec<Ref>,
+    finished: Vec<Ref>,
     output_buffer_length: usize,
     prompt: Option<String>,
     prompt_input: Option<String>,
     running: Vec<Ref>,
-    succeeded: Vec<Ref>,
 }
 
 /// An implementation of `Progress` designed for parallel execution
@@ -94,6 +102,7 @@ impl Parallel {
                         ProgressBarState {
                             bar: pb,
                             output_buffer: Vec::new(),
+                            status: Status::Running,
                         },
                     );
                     state.running.push(reference);
@@ -105,11 +114,12 @@ impl Parallel {
                 }
                 ProgressMessage::Failed(reference) => {
                     let mut state = state.lock().unwrap();
-                    let bar = state.bars.get(&reference).unwrap();
+                    let bar = state.bars.get_mut(&reference).unwrap();
+                    bar.status = Status::Failed;
                     bar.bar.failed();
 
                     state.running.retain(|x| *x != reference);
-                    state.failed.push(reference);
+                    state.finished.push(reference);
                 }
                 ProgressMessage::Hide(reference) => {
                     let state = state.lock().unwrap();
@@ -146,11 +156,12 @@ impl Parallel {
                 }
                 ProgressMessage::Succeeded(reference) => {
                     let mut state = state.lock().unwrap();
-                    let bar = state.bars.get(&reference).unwrap();
+                    let bar = state.bars.get_mut(&reference).unwrap();
+                    bar.status = Status::Succeded;
                     bar.bar.succeeded();
 
                     state.running.retain(|x| *x != reference);
-                    state.succeeded.push(reference);
+                    state.finished.push(reference);
                 }
                 ProgressMessage::Shutdown => {
                     break;
@@ -220,48 +231,38 @@ impl Progress for Parallel {
         if state.output_buffer_length > 0 {
             // Backtrack cursor to the start
             output_buffer.push_str(&format!("\x1b[{}A", state.output_buffer_length));
-            output_buffer.push_str("\x1b[0G"); // Beginning of line
-            output_buffer.push_str("\x1b[J"); // Clear to end
         }
+        output_buffer.push_str("\x1b[0G"); // Beginning of line
+        output_buffer.push_str("\x1b[J"); // Clear to end
 
         let mut lines_rendered = 0;
 
-        let succeeded = state.succeeded.clone();
-        for reference in &succeeded {
-            let bar_state = state.bars.get_mut(reference).unwrap();
+        let mut finished = state.finished.clone();
+        for reference in finished.drain(0..) {
+            let bar_state = state.bars.remove(&reference).unwrap();
+
+            if bar_state.status == Status::Failed {
+                let start_idx = if bar_state.output_buffer.len() > 5 {
+                    bar_state.output_buffer.len() - 5
+                } else {
+                    0
+                };
+                for line in &bar_state.output_buffer[start_idx..] {
+                    output_buffer.push_str(line);
+                    output_buffer.push('\n');
+                }
+            }
+
             let rendered = bar_state.bar.to_string();
             if !rendered.is_empty() {
                 output_buffer.push_str(&rendered);
                 output_buffer.push('\n');
             }
         }
-        state.succeeded = Vec::new();
+        state.finished = Vec::new();
 
         let running = state.running.clone();
         for reference in &running {
-            let bar_state = state.bars.get_mut(reference).unwrap();
-            let start_idx = if bar_state.output_buffer.len() > 5 {
-                bar_state.output_buffer.len() - 5
-            } else {
-                0
-            };
-            for line in &bar_state.output_buffer[start_idx..] {
-                output_buffer.push_str(line);
-                output_buffer.push('\n');
-                lines_rendered += 1;
-            }
-
-            bar_state.bar.tick();
-            let rendered = bar_state.bar.to_string();
-            if !rendered.is_empty() {
-                output_buffer.push_str(&rendered);
-                output_buffer.push('\n');
-                lines_rendered += 1;
-            }
-        }
-
-        let failed = state.failed.clone();
-        for reference in &failed {
             let bar_state = state.bars.get_mut(reference).unwrap();
             let start_idx = if bar_state.output_buffer.len() > 5 {
                 bar_state.output_buffer.len() - 5
