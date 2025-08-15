@@ -54,12 +54,19 @@ impl Progress for Sync {
         reference
     }
 
+    fn clear_prompt(&mut self) {
+        let _ = console::Term::stderr().hide_cursor();
+    }
+
     fn failed(&mut self, reference: Ref) {
         let bars = self.bars.lock().unwrap();
         let pb = bars.get(&reference).unwrap();
         pb.failed();
         pb.render();
         eprintln!();
+
+        let mut current = self.current.lock().unwrap();
+        *current = None;
     }
 
     fn hide(&mut self, reference: Ref) {
@@ -75,9 +82,9 @@ impl Progress for Sync {
         pb.render();
     }
 
-    fn prompt(&mut self, msg: &str) -> String {
-        eprintln!("{}", msg);
-        console::Term::stdout().read_line().unwrap_or("".into())
+    fn prompt(&mut self, msg: &str) {
+        eprint!("{}", msg);
+        let _ = console::Term::stderr().show_cursor();
     }
 
     fn render(&mut self) {
@@ -111,6 +118,9 @@ impl Progress for Sync {
         pb.succeeded();
         pb.render();
         eprintln!();
+
+        let mut current = self.current.lock().unwrap();
+        *current = None;
     }
 }
 

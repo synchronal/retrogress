@@ -16,4 +16,6 @@ fn main() {
             progress.succeeded(pb);
         }
     }
+
+    let _ = progress.prompt("Here is a prompt for you to type something > ");
 }

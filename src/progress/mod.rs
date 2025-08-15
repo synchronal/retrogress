@@ -37,6 +37,8 @@ pub trait Progress: Send + Sync {
     /// Append a new progress bar to the console. Returns a `usize` that
     /// serves as a reference to the progress bar in other functions.
     fn append(&mut self, msg: &str) -> Ref;
+    /// Called after prompt input is received.
+    fn clear_prompt(&mut self);
     /// Mark the given progress bar as failed.
     fn failed(&mut self, references: Ref);
     /// Hides the given progress bar.
@@ -46,7 +48,7 @@ pub trait Progress: Send + Sync {
     fn println(&mut self, reference: Ref, msg: &str);
     /// Prints out the message as a prompt. Ensures that the entire prompt
     /// is printed.
-    fn prompt(&mut self, msg: &str) -> String;
+    fn prompt(&mut self, msg: &str);
     /// Function to rerender the progress bar. This will be called on a
     /// regular interval.
     fn render(&mut self);
@@ -134,7 +136,10 @@ impl ProgressBar {
         self.progress.lock().unwrap().println(reference, msg)
     }
     pub fn prompt(&mut self, msg: &str) -> String {
-        self.progress.lock().unwrap().prompt(msg)
+        self.progress.lock().unwrap().prompt(msg);
+        let input = console::Term::stdout().read_line().unwrap_or("".into());
+        self.progress.lock().unwrap().clear_prompt();
+        input.trim().into()
     }
     pub fn set_message(&mut self, reference: Ref, msg: String) {
         self.progress.lock().unwrap().set_message(reference, msg)
@@ -229,6 +234,8 @@ mod tests {
             reference
         }
 
+        fn clear_prompt(&mut self) {}
+
         fn failed(&mut self, reference: Ref) {
             self.failed_refs.lock().unwrap().push(reference);
         }
@@ -244,9 +251,8 @@ mod tests {
                 .push((reference, msg.to_string()));
         }
 
-        fn prompt(&mut self, msg: &str) -> String {
+        fn prompt(&mut self, msg: &str) {
             self.prompt_calls.lock().unwrap().push(msg.to_string());
-            "reply".into()
         }
 
         fn render(&mut self) {}

@@ -180,6 +180,10 @@ impl Progress for Parallel {
         reference
     }
 
+    fn clear_prompt(&mut self) {
+        let _ = self.message_sender.send(ProgressMessage::ClearPrompt);
+    }
+
     fn failed(&mut self, reference: Ref) {
         let _ = self.message_sender.send(ProgressMessage::Failed(reference));
     }
@@ -194,15 +198,10 @@ impl Progress for Parallel {
             .send(ProgressMessage::Println(reference, msg.to_string()));
     }
 
-    fn prompt(&mut self, msg: &str) -> String {
+    fn prompt(&mut self, msg: &str) {
         let _ = self
             .message_sender
             .send(ProgressMessage::Prompt(msg.to_string()));
-
-        let reply = console::Term::stdout().read_line().unwrap_or("".into());
-
-        let _ = self.message_sender.send(ProgressMessage::ClearPrompt);
-        reply
     }
 
     fn render(&mut self) {
@@ -281,10 +280,16 @@ impl Progress for Parallel {
             let _ = Term::stdout().hide_cursor();
             let _ = Term::stderr().hide_cursor();
 
-            for line in prompt.lines() {
-                output_buffer.push_str(line);
-                output_buffer.push('\n');
-                lines_rendered += 1;
+            let lines: Vec<&str> = prompt.lines().collect();
+            let length = lines.len();
+            for (index, line) in lines.iter().enumerate() {
+                let trimmed_line = line.replace(['\n', '\r'], "");
+
+                output_buffer.push_str(&trimmed_line);
+                if index != length - 1 {
+                    output_buffer.push('\n');
+                    lines_rendered += 1;
+                }
             }
         }
 

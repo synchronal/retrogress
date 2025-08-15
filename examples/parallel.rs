@@ -3,7 +3,7 @@ use rand::Rng;
 use std::{thread, time};
 
 fn main() {
-    let progress = retrogress::ProgressBar::new(retrogress::Parallel::boxed());
+    let mut progress = retrogress::ProgressBar::new(retrogress::Parallel::boxed());
     let mut handles = vec![];
 
     // Spawn multiple threads with progress bars
@@ -37,4 +37,6 @@ fn main() {
     for handle in handles {
         handle.join().unwrap();
     }
+
+    let _ = progress.prompt("Here is a prompt for you to type something > ");
 }
