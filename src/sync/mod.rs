@@ -86,6 +86,10 @@ impl Progress for Sync {
         pb.render();
     }
 
+    fn print_inline(&mut self, msg: &str) {
+        eprintln!("{msg}");
+    }
+
     fn prompt(&mut self, msg: &str) {
         self.prompt = Some(msg.into());
         eprint!("{}", msg);

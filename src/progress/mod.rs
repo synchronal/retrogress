@@ -46,6 +46,8 @@ pub trait Progress: Send + Sync {
     /// Prints a line of text above a progress bar, without interrupted it.
     /// Helpful when capturing output from commands to show to users.
     fn println(&mut self, reference: Ref, msg: &str);
+    /// Prints a line above all progress bars.
+    fn print_inline(&mut self, msg: &str);
     /// Prints out the message as a prompt. Ensures that the entire prompt
     /// is printed.
     fn prompt(&mut self, msg: &str);
@@ -137,6 +139,11 @@ impl ProgressBar {
     }
     pub fn println(&mut self, reference: Ref, msg: &str) {
         self.progress.lock().unwrap().println(reference, msg)
+    }
+    pub fn print_inline(&mut self, msg: &str) {
+        let mut progress = self.progress.lock().unwrap();
+        progress.print_inline(msg);
+        progress.render();
     }
     pub fn prompt(&mut self, msg: &str) -> String {
         self.progress.lock().unwrap().prompt(msg);
@@ -243,6 +250,7 @@ mod tests {
         prompt_calls: Arc<Mutex<Vec<String>>>,
         set_message_calls: Arc<Mutex<Vec<(Ref, String)>>>,
         shown_refs: Arc<Mutex<Vec<Ref>>>,
+        inline_calls: Arc<Mutex<Vec<String>>>,
         succeeded_refs: Arc<Mutex<Vec<Ref>>>,
     }
 
@@ -277,6 +285,10 @@ mod tests {
                 .lock()
                 .unwrap()
                 .push((reference, msg.to_string()));
+        }
+
+        fn print_inline(&mut self, msg: &str) {
+            self.inline_calls.lock().unwrap().push(msg.to_string());
         }
 
         fn prompt(&mut self, msg: &str) {

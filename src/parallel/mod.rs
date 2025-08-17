@@ -14,6 +14,7 @@ enum ProgressMessage {
     ClearPrompt,
     Failed(Ref),
     Hide(Ref),
+    Inline(String),
     Println(Ref, String),
     Prompt(String),
     SetMessage(Ref, String),
@@ -45,6 +46,7 @@ struct State {
     prompt: Option<String>,
     prompt_input: Option<String>,
     running: Vec<Ref>,
+    inlines: Vec<String>,
 }
 
 /// An implementation of `Progress` designed for parallel execution
@@ -154,6 +156,10 @@ impl Parallel {
                     let bar = state.bars.get(&reference).unwrap();
                     bar.bar.show();
                 }
+                ProgressMessage::Inline(message) => {
+                    let mut state = state.lock().unwrap();
+                    state.inlines.push(message);
+                }
                 ProgressMessage::Succeeded(reference) => {
                     let mut state = state.lock().unwrap();
                     let bar = state.bars.get_mut(&reference).unwrap();
@@ -210,6 +216,12 @@ impl Progress for Parallel {
         let _ = self.message_sender.send(ProgressMessage::Hide(reference));
     }
 
+    fn print_inline(&mut self, msg: &str) {
+        let _ = self
+            .message_sender
+            .send(ProgressMessage::Inline(msg.to_string()));
+    }
+
     fn println(&mut self, reference: Ref, msg: &str) {
         let _ = self
             .message_sender
@@ -235,7 +247,10 @@ impl Progress for Parallel {
         output_buffer.push_str("\x1b[0G"); // Beginning of line
         output_buffer.push_str("\x1b[J"); // Clear to end
 
-        let mut lines_rendered = 0;
+        for inline in state.inlines.drain(0..) {
+            output_buffer.push_str(&inline);
+            output_buffer.push('\n');
+        }
 
         let mut finished = state.finished.clone();
         for reference in finished.drain(0..) {
@@ -260,6 +275,8 @@ impl Progress for Parallel {
             }
         }
         state.finished = Vec::new();
+
+        let mut lines_rendered = 0;
 
         let running = state.running.clone();
         for reference in &running {

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add required `print_inline` to `Progress` trait.
+
 ## 1.0.0
 
 - Add required `prompt`, `clear_prompt`, and `set_prompt_input` to
