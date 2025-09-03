@@ -4,6 +4,7 @@ use crate::Progress;
 
 use console::Term;
 use std::collections::HashMap;
+use std::fmt::Write;
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
@@ -135,7 +136,8 @@ impl Parallel {
 
                     // Trim buffer to keep only the last 1000 lines
                     if bar.output_buffer.len() > 1000 {
-                        bar.output_buffer.drain(0..bar.output_buffer.len() - 1000);
+                        let excess = bar.output_buffer.len() - 1000;
+                        bar.output_buffer.drain(0..excess);
                     }
                 }
                 ProgressMessage::Prompt(message) => {
@@ -238,22 +240,23 @@ impl Progress for Parallel {
         let mut state = self.state.lock().unwrap();
 
         let term = Term::stderr();
-        let mut output_buffer = String::new();
+        // Pre-allocate buffer with estimated capacity
+        let estimated_capacity = state.output_buffer_length * 80 + 500;
+        let mut output_buffer = String::with_capacity(estimated_capacity);
 
         if state.output_buffer_length > 0 {
-            // Backtrack cursor to the start
-            output_buffer.push_str(&format!("\x1b[{}A", state.output_buffer_length));
+            let _ = write!(output_buffer, "\x1b[{}A", state.output_buffer_length);
         }
-        output_buffer.push_str("\x1b[0G"); // Beginning of line
-        output_buffer.push_str("\x1b[J"); // Clear to end
+        let _ = write!(output_buffer, "\x1b[0G"); // Beginning of line
+        let _ = write!(output_buffer, "\x1b[J"); // Clear to end
 
         for inline in state.inlines.drain(0..) {
             output_buffer.push_str(&inline);
             output_buffer.push('\n');
         }
 
-        let mut finished = state.finished.clone();
-        for reference in finished.drain(0..) {
+        let mut finished = std::mem::take(&mut state.finished);
+        for reference in finished.drain(..) {
             let bar_state = state.bars.remove(&reference).unwrap();
 
             if bar_state.status == Status::Failed {
@@ -274,7 +277,6 @@ impl Progress for Parallel {
                 output_buffer.push('\n');
             }
         }
-        state.finished = Vec::new();
 
         let mut lines_rendered = 0;
 
@@ -301,7 +303,7 @@ impl Progress for Parallel {
             }
         }
 
-        if let Some(prompt) = state.prompt.clone() {
+        if let Some(ref prompt) = state.prompt {
             let _ = Term::stdout().hide_cursor();
             let _ = Term::stderr().hide_cursor();
 
@@ -316,8 +318,8 @@ impl Progress for Parallel {
                     lines_rendered += 1;
                 }
             }
-            if let Some(prompt_input) = state.prompt_input.clone() {
-                output_buffer.push_str(&prompt_input);
+            if let Some(ref prompt_input) = state.prompt_input {
+                output_buffer.push_str(prompt_input);
             }
         }
 
