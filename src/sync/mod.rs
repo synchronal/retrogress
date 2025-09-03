@@ -47,12 +47,11 @@ impl Progress for Sync {
         let reference = Ref::new();
 
         {
-            let mut current = self.current.lock().unwrap();
-            *current = Some(reference);
-
             let mut bars = self.bars.lock().unwrap();
             bars.insert(reference, pb);
-        }
+        } // drop lock
+        let mut current = self.current.lock().unwrap();
+        *current = Some(reference);
         reference
     }
 
@@ -63,10 +62,13 @@ impl Progress for Sync {
     }
 
     fn failed(&mut self, reference: Ref) {
-        let bars = self.bars.lock().unwrap();
-        let pb = bars.get(&reference).unwrap();
-        pb.failed();
-        pb.render();
+        {
+            let bars = self.bars.lock().unwrap();
+            let pb = bars.get(&reference).unwrap();
+            pb.failed();
+            pb.render();
+        } // Drop lock
+
         eprintln!();
 
         let mut current = self.current.lock().unwrap();
@@ -97,19 +99,24 @@ impl Progress for Sync {
     }
 
     fn render(&mut self) {
-        if let Some(reference) = *self.current.lock().unwrap() {
+        let reference = *self.current.lock().unwrap();
+
+        if let Some(ref_id) = reference {
             let bars = self.bars.lock().unwrap();
-            let pb = bars.get(&reference).unwrap();
-            pb.tick();
-            pb.render();
+            if let Some(pb) = bars.get(&ref_id) {
+                pb.tick();
+                pb.render();
+            }
         }
     }
 
     fn set_message(&mut self, reference: Ref, msg: String) {
-        let bars = self.bars.lock().unwrap();
-        let pb = bars.get(&reference).unwrap();
-        pb.set_message(msg);
-        pb.render();
+        {
+            let bars = self.bars.lock().unwrap();
+            let pb = bars.get(&reference).unwrap();
+            pb.set_message(msg);
+            pb.render();
+        } // Drop lock
         eprintln!();
     }
 
@@ -122,18 +129,23 @@ impl Progress for Sync {
     }
 
     fn show(&mut self, reference: Ref) {
-        let bars = self.bars.lock().unwrap();
-        let pb = bars.get(&reference).unwrap();
-        pb.show();
-        pb.render();
+        {
+            let bars = self.bars.lock().unwrap();
+            let pb = bars.get(&reference).unwrap();
+            pb.show();
+            pb.render();
+        } // Drop lock
         eprintln!();
     }
 
     fn succeeded(&mut self, reference: Ref) {
-        let bars = self.bars.lock().unwrap();
-        let pb = bars.get(&reference).unwrap();
-        pb.succeeded();
-        pb.render();
+        {
+            let bars = self.bars.lock().unwrap();
+            let pb = bars.get(&reference).unwrap();
+            pb.succeeded();
+            pb.render();
+        } // Drop lock
+
         eprintln!();
 
         let mut current = self.current.lock().unwrap();
