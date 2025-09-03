@@ -9,6 +9,9 @@ use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 
+static CURSOR_TO_LINE_START: &str = "\x1b[0G";
+static CLEAR_TO_END: &str = "\x1b[J";
+
 #[derive(Debug)]
 enum ProgressMessage {
     Append(Ref, String),
@@ -262,8 +265,8 @@ impl Progress for Parallel {
         if state.output_buffer_length > 0 {
             let _ = write!(output_buffer, "\x1b[{}A", state.output_buffer_length);
         }
-        let _ = write!(output_buffer, "\x1b[0G"); // Beginning of line
-        let _ = write!(output_buffer, "\x1b[J"); // Clear to end
+        output_buffer.push_str(CURSOR_TO_LINE_START);
+        output_buffer.push_str(CLEAR_TO_END);
 
         for inline in state.inlines.drain(0..) {
             output_buffer.push_str(&inline);

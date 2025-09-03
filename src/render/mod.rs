@@ -1,7 +1,15 @@
 use console::{style, Term};
+use std::sync::LazyLock;
 use std::sync::{Arc, Mutex};
 
 const SPINNER_CHARS: &[char] = &['⣾', '⣽', '⣻', '⢿', '⡿', '⣟', '⣯', '⣷'];
+
+// Cache pre-styled strings to avoid repeated format allocations
+static DEFAULT_PREFIX: LazyLock<String> = LazyLock::new(|| format!("{}", style("•").green()));
+static SUCCESS_PREFIX: LazyLock<String> =
+    LazyLock::new(|| format!("{}", style("✓").bold().green()));
+static FAILED_PREFIX: LazyLock<String> =
+    LazyLock::new(|| format!("{}", style("𝗑").bold().bright().red()));
 
 #[derive(Clone)]
 pub struct Renderer {
@@ -34,7 +42,7 @@ impl std::fmt::Display for RendererState {
 impl Renderer {
     pub fn new(message: String) -> Self {
         let state = Arc::new(Mutex::new(RendererState {
-            prefix: format!("{}", style("•").green()),
+            prefix: DEFAULT_PREFIX.clone(),
             message,
             spinner_index: 0,
             visible: true,
@@ -45,7 +53,7 @@ impl Renderer {
     }
 
     pub fn failed(&self) {
-        self.set_prefix(format!("{}", style("𝗑").bold().bright().red()));
+        self.set_prefix(FAILED_PREFIX.clone());
         self.finish();
     }
 
@@ -87,7 +95,7 @@ impl Renderer {
     }
 
     pub fn succeeded(&self) {
-        self.set_prefix(format!("{}", style("✓").bold().green()));
+        self.set_prefix(SUCCESS_PREFIX.clone());
         self.finish();
     }
 
