@@ -253,9 +253,6 @@ impl Progress for Parallel {
 
     fn render(&mut self) {
         let mut state = self.state.lock().unwrap();
-        if !state.changed {
-            return;
-        }
 
         let term = Term::stderr();
         // Pre-allocate buffer with estimated capacity
