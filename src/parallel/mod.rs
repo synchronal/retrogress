@@ -41,6 +41,7 @@ struct ProgressBarState {
 
 #[derive(Default)]
 struct State {
+    changed: bool,
     bars: HashMap<Ref, ProgressBarState>,
     finished: Vec<Ref>,
     output_buffer_length: usize,
@@ -109,11 +110,13 @@ impl Parallel {
                         },
                     );
                     state.running.push(reference);
+                    state.changed = true;
                 }
                 ProgressMessage::ClearPrompt => {
                     let mut state = state.lock().unwrap();
                     state.prompt = None;
                     state.prompt_input = None;
+                    state.changed = true;
                 }
                 ProgressMessage::Failed(reference) => {
                     let mut state = state.lock().unwrap();
@@ -123,11 +126,13 @@ impl Parallel {
 
                     state.running.retain(|x| *x != reference);
                     state.finished.push(reference);
+                    state.changed = true;
                 }
                 ProgressMessage::Hide(reference) => {
-                    let state = state.lock().unwrap();
+                    let mut state = state.lock().unwrap();
                     let bar = state.bars.get(&reference).unwrap();
                     bar.bar.hide();
+                    state.changed = true;
                 }
                 ProgressMessage::Println(reference, message) => {
                     let mut state = state.lock().unwrap();
@@ -139,28 +144,34 @@ impl Parallel {
                         let excess = bar.output_buffer.len() - 1000;
                         bar.output_buffer.drain(0..excess);
                     }
+                    state.changed = true;
                 }
                 ProgressMessage::Prompt(message) => {
                     let mut state = state.lock().unwrap();
                     state.prompt = Some(message);
+                    state.changed = true;
                 }
                 ProgressMessage::SetMessage(reference, message) => {
-                    let state = state.lock().unwrap();
+                    let mut state = state.lock().unwrap();
                     let bar = state.bars.get(&reference).unwrap();
                     bar.bar.set_message(message);
+                    state.changed = true;
                 }
                 ProgressMessage::SetPromptInput(input) => {
                     let mut state = state.lock().unwrap();
                     state.prompt_input = Some(input);
+                    state.changed = true;
                 }
                 ProgressMessage::Show(reference) => {
-                    let state = state.lock().unwrap();
+                    let mut state = state.lock().unwrap();
                     let bar = state.bars.get(&reference).unwrap();
                     bar.bar.show();
+                    state.changed = true;
                 }
                 ProgressMessage::Inline(message) => {
                     let mut state = state.lock().unwrap();
                     state.inlines.push(message);
+                    state.changed = true;
                 }
                 ProgressMessage::Succeeded(reference) => {
                     let mut state = state.lock().unwrap();
@@ -170,6 +181,7 @@ impl Parallel {
 
                     state.running.retain(|x| *x != reference);
                     state.finished.push(reference);
+                    state.changed = true;
                 }
                 ProgressMessage::Shutdown => {
                     break;
@@ -238,6 +250,9 @@ impl Progress for Parallel {
 
     fn render(&mut self) {
         let mut state = self.state.lock().unwrap();
+        if !state.changed {
+            return;
+        }
 
         let term = Term::stderr();
         // Pre-allocate buffer with estimated capacity
@@ -332,6 +347,7 @@ impl Progress for Parallel {
         }
 
         state.output_buffer_length = lines_rendered;
+        state.changed = false;
     }
 
     fn set_message(&mut self, reference: Ref, msg: String) {
