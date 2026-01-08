@@ -116,11 +116,11 @@ impl Renderer {
         if !state.visible {
             return;
         }
+        let output = state.to_string();
+        drop(state);
 
         Term::stderr().clear_line().unwrap();
-
-        eprint!("{}", state);
-
+        eprint!("{}", output);
         Term::stderr().flush().unwrap();
     }
 }

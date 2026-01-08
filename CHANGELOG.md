@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Proactively release locks prior to IO.
+
 ## 1.1.0
 
 - Add required `print_inline` to `Progress` trait.
