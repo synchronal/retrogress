@@ -176,26 +176,29 @@ impl ProgressBar {
     }
 
     fn read_input(&mut self) -> String {
-        let term = Term::stdout();
         let mut input = String::new();
 
         loop {
-            match term.read_key().unwrap() {
+            match Term::stdout().read_key().unwrap() {
                 Key::Enter => break,
                 Key::Char(c) => {
                     input.push(c);
+                    self.progress
+                        .lock()
+                        .unwrap()
+                        .set_prompt_input(input.clone());
                 }
                 Key::Backspace => {
                     if !input.is_empty() {
                         input.pop();
+                        self.progress
+                            .lock()
+                            .unwrap()
+                            .set_prompt_input(input.clone());
                     }
                 }
                 _ => {}
             }
-            self.progress
-                .lock()
-                .unwrap()
-                .set_prompt_input(input.clone());
         }
         input
     }
