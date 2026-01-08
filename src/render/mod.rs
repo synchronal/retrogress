@@ -65,21 +65,24 @@ impl Renderer {
     pub fn set_message(&self, message: String) {
         let mut state = self.state.lock().unwrap();
         state.message = message;
-        drop(state);
     }
 
     pub fn println(&self, msg: &str) {
-        let state = self.state.lock().unwrap();
-        if state.visible {
+        let visible = {
+            let state = self.state.lock().unwrap();
+            state.visible
+        };
+        if visible {
             Term::stderr().clear_line().unwrap();
             eprintln!("{msg}");
-            drop(state);
         }
     }
 
     pub fn hide(&self) {
-        let mut state = self.state.lock().unwrap();
-        state.visible = false;
+        {
+            let mut state = self.state.lock().unwrap();
+            state.visible = false;
+        }
         Term::stderr().clear_line().unwrap();
     }
 
@@ -91,7 +94,6 @@ impl Renderer {
     pub fn finish(&self) {
         let mut state = self.state.lock().unwrap();
         state.finished = true;
-        drop(state);
     }
 
     pub fn succeeded(&self) {
