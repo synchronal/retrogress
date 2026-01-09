@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 1.2.0
+
 - Proactively release locks prior to IO.
 
 ## 1.1.0
