@@ -62,12 +62,12 @@ impl Progress for Sync {
     }
 
     fn failed(&mut self, reference: Ref) {
-        {
+        let pb = {
             let bars = self.bars.lock().unwrap();
-            let pb = bars.get(&reference).unwrap();
-            pb.failed();
-            pb.render();
-        } // Drop lock
+            bars.get(&reference).unwrap().clone()
+        };
+        pb.failed();
+        pb.render();
 
         eprintln!();
 
@@ -76,14 +76,18 @@ impl Progress for Sync {
     }
 
     fn hide(&mut self, reference: Ref) {
-        let bars = self.bars.lock().unwrap();
-        let pb = bars.get(&reference).unwrap();
+        let pb = {
+            let bars = self.bars.lock().unwrap();
+            bars.get(&reference).unwrap().clone()
+        };
         pb.hide();
     }
 
     fn println(&mut self, reference: Ref, msg: &str) {
-        let bars = self.bars.lock().unwrap();
-        let pb = bars.get(&reference).unwrap();
+        let pb = {
+            let bars = self.bars.lock().unwrap();
+            bars.get(&reference).unwrap().clone()
+        };
         pb.println(msg);
         pb.render();
     }
@@ -111,12 +115,12 @@ impl Progress for Sync {
     }
 
     fn set_message(&mut self, reference: Ref, msg: String) {
-        {
+        let pb = {
             let bars = self.bars.lock().unwrap();
-            let pb = bars.get(&reference).unwrap();
-            pb.set_message(msg);
-            pb.render();
-        } // Drop lock
+            bars.get(&reference).unwrap().clone()
+        };
+        pb.set_message(msg);
+        pb.render();
         eprintln!();
     }
 
@@ -129,22 +133,22 @@ impl Progress for Sync {
     }
 
     fn show(&mut self, reference: Ref) {
-        {
+        let pb = {
             let bars = self.bars.lock().unwrap();
-            let pb = bars.get(&reference).unwrap();
-            pb.show();
-            pb.render();
-        } // Drop lock
+            bars.get(&reference).unwrap().clone()
+        };
+        pb.show();
+        pb.render();
         eprintln!();
     }
 
     fn succeeded(&mut self, reference: Ref) {
-        {
+        let pb = {
             let bars = self.bars.lock().unwrap();
-            let pb = bars.get(&reference).unwrap();
-            pb.succeeded();
-            pb.render();
-        } // Drop lock
+            bars.get(&reference).unwrap().clone()
+        };
+        pb.succeeded();
+        pb.render();
 
         eprintln!();
 
