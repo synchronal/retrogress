@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Truncate progress output to terminal width.
+
 ## 1.2.0
 
 - Proactively release locks prior to IO.

@@ -243,6 +243,7 @@ impl Progress for Parallel {
 
     fn render(&mut self) {
         let mut state = self.state.lock().unwrap();
+        let width = self.console_size.1 as usize;
 
         // Pre-allocate buffer with estimated capacity
         let estimated_capacity = state.output_buffer_length * 80 + 500;
@@ -277,7 +278,8 @@ impl Progress for Parallel {
 
             let rendered = bar_state.bar.to_string();
             if !rendered.is_empty() {
-                output_buffer.push_str(&rendered);
+                let truncated = console::truncate_str(&rendered, width.saturating_sub(1), "…");
+                output_buffer.push_str(&truncated);
                 output_buffer.push('\n');
             }
         }
@@ -293,7 +295,8 @@ impl Progress for Parallel {
                 0
             };
             for line in &bar_state.output_buffer[start_idx..] {
-                output_buffer.push_str(line);
+                let truncated_line = console::truncate_str(line, width.saturating_sub(1), "…");
+                output_buffer.push_str(&truncated_line);
                 output_buffer.push('\n');
                 lines_rendered += 1;
             }
@@ -301,7 +304,8 @@ impl Progress for Parallel {
             bar_state.bar.tick();
             let rendered = bar_state.bar.to_string();
             if !rendered.is_empty() {
-                output_buffer.push_str(&rendered);
+                let truncated = console::truncate_str(&rendered, width.saturating_sub(1), "…");
+                output_buffer.push_str(&truncated);
                 output_buffer.push('\n');
                 lines_rendered += 1;
             }

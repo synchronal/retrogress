@@ -123,9 +123,13 @@ impl Renderer {
         let output = state.to_string();
         drop(state);
 
-        Term::stderr().clear_line().unwrap();
-        eprint!("{}", output);
-        Term::stderr().flush().unwrap();
+        let term = Term::stderr();
+        let width = term.size().1 as usize;
+        let truncated = console::truncate_str(&output, width.saturating_sub(1), "…");
+
+        term.clear_line().unwrap();
+        eprint!("{}", truncated);
+        term.flush().unwrap();
     }
 }
 
