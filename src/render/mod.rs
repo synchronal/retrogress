@@ -53,8 +53,9 @@ impl Renderer {
     }
 
     pub fn failed(&self) {
-        self.set_prefix(FAILED_PREFIX.clone());
-        self.finish();
+        let mut state = self.state.lock().unwrap();
+        state.prefix = FAILED_PREFIX.clone();
+        state.finished = true;
     }
 
     pub fn set_prefix(&self, prefix: String) {
@@ -97,8 +98,9 @@ impl Renderer {
     }
 
     pub fn succeeded(&self) {
-        self.set_prefix(SUCCESS_PREFIX.clone());
-        self.finish();
+        let mut state = self.state.lock().unwrap();
+        state.prefix = SUCCESS_PREFIX.clone();
+        state.finished = true;
     }
 
     pub fn tick(&self) {
