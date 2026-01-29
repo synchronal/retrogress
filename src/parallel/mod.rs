@@ -9,8 +9,9 @@ use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 
-static CURSOR_TO_LINE_START: &str = "\x1b[0G";
+static CLEAR_LINE: &str = "\x1b[2K";
 static CLEAR_TO_END: &str = "\x1b[J";
+static CURSOR_TO_LINE_START: &str = "\x1b[0G";
 
 #[derive(Debug)]
 enum ProgressMessage {
@@ -76,6 +77,7 @@ struct State {
     bars: HashMap<Ref, ProgressBarState>,
     finished: Vec<Ref>,
     output_buffer_length: usize,
+    back_buffer: Vec<String>,
     prompt: Option<String>,
     prompt_input: Option<String>,
     running: Vec<Ref>,
@@ -282,19 +284,15 @@ impl Progress for Parallel {
         let mut state = self.state.lock().unwrap();
         let width = self.console_size.1 as usize;
 
-        // Pre-allocate buffer with estimated capacity
-        let estimated_capacity = state.output_buffer_length * 80 + 500;
-        let mut output_buffer = String::with_capacity(estimated_capacity);
+        let has_inlines = !state.inlines.is_empty();
+        let has_finished = !state.finished.is_empty();
 
-        if state.output_buffer_length > 0 {
-            let _ = write!(output_buffer, "\x1b[{}A", state.output_buffer_length);
-        }
-        output_buffer.push_str(CURSOR_TO_LINE_START);
-        output_buffer.push_str(CLEAR_TO_END);
+        // Build pre-active-region output (inlines + finished bars)
+        let mut pre_output = String::new();
 
         for inline in state.inlines.drain(0..) {
-            output_buffer.push_str(&inline);
-            output_buffer.push('\n');
+            pre_output.push_str(&inline);
+            pre_output.push('\n');
         }
 
         let mut finished = std::mem::take(&mut state.finished);
@@ -308,20 +306,21 @@ impl Progress for Parallel {
                     0
                 };
                 for line in &bar_state.output_buffer[start_idx..] {
-                    output_buffer.push_str(line);
-                    output_buffer.push('\n');
+                    pre_output.push_str(line);
+                    pre_output.push('\n');
                 }
             }
 
             let rendered = bar_state.bar.to_string();
             if !rendered.is_empty() {
                 let truncated = console::truncate_str(&rendered, width.saturating_sub(1), "…");
-                output_buffer.push_str(&truncated);
-                output_buffer.push('\n');
+                pre_output.push_str(&truncated);
+                pre_output.push('\n');
             }
         }
 
-        let mut lines_rendered = 0;
+        // Build current active-region lines
+        let mut current_lines: Vec<String> = Vec::new();
 
         let running = state.running.clone();
         for reference in &running {
@@ -332,39 +331,89 @@ impl Progress for Parallel {
                 0
             };
             for line in &bar_state.output_buffer[start_idx..] {
-                let truncated_line = console::truncate_str(line, width.saturating_sub(1), "…");
-                output_buffer.push_str(&truncated_line);
-                output_buffer.push('\n');
-                lines_rendered += 1;
+                let truncated_line =
+                    console::truncate_str(line, width.saturating_sub(1), "…").to_string();
+                current_lines.push(truncated_line);
             }
 
             bar_state.bar.tick();
             let rendered = bar_state.bar.to_string();
             if !rendered.is_empty() {
-                let truncated = console::truncate_str(&rendered, width.saturating_sub(1), "…");
-                output_buffer.push_str(&truncated);
-                output_buffer.push('\n');
-                lines_rendered += 1;
+                let truncated =
+                    console::truncate_str(&rendered, width.saturating_sub(1), "…").to_string();
+                current_lines.push(truncated);
             }
         }
 
+        // The prompt's last line is kept separate — it has no trailing newline
+        // so the cursor rests on it for user input.
+        let mut prompt_tail: Option<String> = None;
         if let Some(ref prompt) = state.prompt {
             let lines: Vec<&str> = prompt.lines().collect();
             let length = lines.len();
             for (index, line) in lines.iter().enumerate() {
                 let trimmed_line = line.replace(['\n', '\r'], "");
-
-                output_buffer.push_str(&trimmed_line);
-                if index != length - 1 {
-                    output_buffer.push('\n');
-                    lines_rendered += 1;
+                if index == length - 1 {
+                    let mut last_line = trimmed_line;
+                    if let Some(ref prompt_input) = state.prompt_input {
+                        last_line.push_str(prompt_input);
+                    }
+                    prompt_tail = Some(last_line);
+                } else {
+                    current_lines.push(trimmed_line);
                 }
             }
-            if let Some(ref prompt_input) = state.prompt_input {
-                output_buffer.push_str(prompt_input);
+        }
+
+        let current_len = current_lines.len();
+        let needs_full_redraw = has_inlines
+            || has_finished
+            || current_len != state.back_buffer.len()
+            || state.back_buffer.is_empty();
+
+        let mut output_buffer = String::with_capacity(current_len * 80 + 500);
+
+        if needs_full_redraw {
+            if state.output_buffer_length > 0 {
+                let _ = write!(output_buffer, "\x1b[{}A", state.output_buffer_length);
+            }
+            output_buffer.push_str(CURSOR_TO_LINE_START);
+            output_buffer.push_str(CLEAR_TO_END);
+
+            output_buffer.push_str(&pre_output);
+
+            for line in &current_lines {
+                output_buffer.push_str(line);
+                output_buffer.push('\n');
+            }
+        } else {
+            let mut cursor_line: usize = current_len;
+
+            for (i, line) in current_lines.iter().enumerate() {
+                if *line != state.back_buffer[i] {
+                    if cursor_line > i {
+                        let _ = write!(output_buffer, "\x1b[{}A", cursor_line - i);
+                    } else if i > cursor_line {
+                        let _ = write!(output_buffer, "\x1b[{}B", i - cursor_line);
+                    }
+
+                    write_line(&mut output_buffer, line);
+
+                    cursor_line = i;
+                }
+            }
+
+            if cursor_line < current_len {
+                let _ = write!(output_buffer, "\x1b[{}B", current_len - cursor_line);
             }
         }
-        state.output_buffer_length = lines_rendered;
+
+        if let Some(ref tail) = prompt_tail {
+            write_line(&mut output_buffer, tail);
+        }
+
+        state.output_buffer_length = current_len;
+        state.back_buffer = current_lines;
         let has_prompt = state.prompt.is_some();
         drop(state);
 
@@ -402,6 +451,12 @@ impl Progress for Parallel {
             .message_sender
             .send(ProgressMessage::Succeeded(reference));
     }
+}
+
+fn write_line(buf: &mut String, content: &str) {
+    buf.push('\r');
+    buf.push_str(CLEAR_LINE);
+    buf.push_str(content);
 }
 
 #[cfg(test)]

@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Add simple back buffer for reducing size of parallel renders.
 - Implement stdlib traits on structs, enums for general usability:
   - Display on ProgressMessage.
   - Debug, From dyn Progress on ProgressBar.
