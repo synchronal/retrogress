@@ -28,12 +28,41 @@ enum ProgressMessage {
     Succeeded(Ref),
 }
 
-#[derive(Default, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 enum Status {
     Failed,
     #[default]
     Running,
     Succeded,
+}
+
+impl std::fmt::Display for Status {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Status::Failed => write!(f, "Failed"),
+            Status::Running => write!(f, "Running"),
+            Status::Succeded => write!(f, "Succeded"),
+        }
+    }
+}
+
+impl std::fmt::Display for ProgressMessage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ProgressMessage::Append(r, msg) => write!(f, "Append({r}, {msg})"),
+            ProgressMessage::ClearPrompt => write!(f, "ClearPrompt"),
+            ProgressMessage::Failed(r) => write!(f, "Failed({r})"),
+            ProgressMessage::Hide(r) => write!(f, "Hide({r})"),
+            ProgressMessage::Inline(msg) => write!(f, "Inline({msg})"),
+            ProgressMessage::Println(r, msg) => write!(f, "Println({r}, {msg})"),
+            ProgressMessage::Prompt(msg) => write!(f, "Prompt({msg})"),
+            ProgressMessage::SetMessage(r, msg) => write!(f, "SetMessage({r}, {msg})"),
+            ProgressMessage::SetPromptInput(msg) => write!(f, "SetPromptInput({msg})"),
+            ProgressMessage::Show(r) => write!(f, "Show({r})"),
+            ProgressMessage::Shutdown => write!(f, "Shutdown"),
+            ProgressMessage::Succeeded(r) => write!(f, "Succeeded({r})"),
+        }
+    }
 }
 
 struct ProgressBarState {
@@ -68,6 +97,14 @@ pub struct Parallel {
     message_sender: Sender<ProgressMessage>,
     worker_thread: Option<JoinHandle<()>>,
     state: Arc<Mutex<State>>,
+}
+
+impl std::fmt::Debug for Parallel {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Parallel")
+            .field("console_size", &self.console_size)
+            .finish_non_exhaustive()
+    }
 }
 
 impl Parallel {
@@ -373,6 +410,42 @@ mod tests {
     use crate::Progress;
     use std::thread;
     use std::time::Duration;
+
+    #[test]
+    fn parallel_debug_trait() {
+        let parallel = Parallel::new();
+        let debug_str = format!("{parallel:?}");
+        assert!(debug_str.contains("Parallel"));
+    }
+
+    #[test]
+    fn status_display_trait() {
+        assert_eq!(format!("{}", Status::Failed), "Failed");
+        assert_eq!(format!("{}", Status::Running), "Running");
+        assert_eq!(format!("{}", Status::Succeded), "Succeded");
+    }
+
+    #[test]
+    fn status_clone_and_copy() {
+        let status = Status::Running;
+        let cloned = status.clone();
+        let copied = status;
+        assert_eq!(cloned, copied);
+    }
+
+    #[test]
+    fn status_debug_trait() {
+        let debug_str = format!("{:?}", Status::Running);
+        assert!(debug_str.contains("Running"));
+    }
+
+    #[test]
+    fn progress_message_display_trait() {
+        let pb_ref = Ref::new();
+        let msg = ProgressMessage::Append(pb_ref, "test".to_string());
+        let display_str = format!("{msg}");
+        assert!(display_str.contains("Append"));
+    }
 
     #[test]
     fn parallel_new_creates_worker_thread() {

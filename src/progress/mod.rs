@@ -78,6 +78,18 @@ pub struct ProgressBar {
     counter: *mut Counter,
 }
 
+impl std::fmt::Debug for ProgressBar {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ProgressBar").finish_non_exhaustive()
+    }
+}
+
+impl From<Box<dyn Progress>> for ProgressBar {
+    fn from(bar: Box<dyn Progress>) -> Self {
+        Self::new(bar)
+    }
+}
+
 struct Counter(AtomicUsize);
 
 unsafe impl std::marker::Send for ProgressBar {}
@@ -443,6 +455,22 @@ mod tests {
 
         let calls = set_message_calls.lock().unwrap();
         assert_eq!(*calls, vec![(reference, "updated message".to_string())]);
+    }
+
+    #[test]
+    fn progress_bar_debug_trait() {
+        let mock = MockProgress::new();
+        let progress_bar = ProgressBar::new(Box::new(mock));
+        let debug_str = format!("{progress_bar:?}");
+        assert!(debug_str.contains("ProgressBar"));
+    }
+
+    #[test]
+    fn progress_bar_from_boxed_progress() {
+        let mock = MockProgress::new();
+        let boxed: Box<dyn Progress> = Box::new(mock);
+        let mut progress_bar = ProgressBar::from(boxed);
+        let _ref = progress_bar.append("test");
     }
 
     #[test]

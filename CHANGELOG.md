@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Implement stdlib traits on structs, enums for general usability:
+  - Display on ProgressMessage.
+  - Debug, From dyn Progress on ProgressBar.
+  - Clone, Copy, Debug, Display on parallel Status.
+  - Debug on Sync, Renderer, Parallel.
+
 ## 1.3.0
 
 - Truncate progress output to terminal width.

@@ -39,6 +39,17 @@ impl std::fmt::Display for RendererState {
     }
 }
 
+impl std::fmt::Debug for Renderer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let state = self.state.lock().unwrap();
+        f.debug_struct("Renderer")
+            .field("message", &state.message)
+            .field("visible", &state.visible)
+            .field("finished", &state.finished)
+            .finish()
+    }
+}
+
 impl Renderer {
     pub fn new(message: String) -> Self {
         let state = Arc::new(Mutex::new(RendererState {
@@ -143,6 +154,13 @@ impl std::fmt::Display for Renderer {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn renderer_debug_trait() {
+        let renderer = Renderer::new("Test message".to_string());
+        let debug_str = format!("{renderer:?}");
+        assert!(debug_str.contains("Renderer"));
+    }
 
     #[test]
     fn progress_bar_new_creates_with_message() {

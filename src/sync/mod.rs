@@ -18,6 +18,12 @@ pub struct Sync {
     prompt: Option<String>,
 }
 
+impl std::fmt::Debug for Sync {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Sync").finish_non_exhaustive()
+    }
+}
+
 impl Sync {
     pub fn new() -> Self {
         console::set_colors_enabled(true);
@@ -161,6 +167,13 @@ impl Progress for Sync {
 mod tests {
     use super::*;
     use crate::Progress;
+
+    #[test]
+    fn sync_debug_trait() {
+        let sync = Sync::new();
+        let debug_str = format!("{sync:?}");
+        assert!(debug_str.contains("Sync"));
+    }
 
     #[test]
     fn sync_new_creates_empty_progress_tracker() {
