@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Use edition 2024.
+
 ## 1.4.0
 
 - Add simple back buffer for reducing size of parallel renders.

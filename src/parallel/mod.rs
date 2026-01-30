@@ -1,6 +1,6 @@
+use crate::Progress;
 use crate::progress::Ref;
 use crate::render::Renderer;
-use crate::Progress;
 
 use console::Term;
 use std::collections::HashMap;
@@ -505,10 +505,12 @@ mod tests {
     #[test]
     fn parallel_new_creates_worker_thread() {
         let parallel = Parallel::new();
-        assert!(parallel
-            .message_sender
-            .send(ProgressMessage::Shutdown)
-            .is_ok());
+        assert!(
+            parallel
+                .message_sender
+                .send(ProgressMessage::Shutdown)
+                .is_ok()
+        );
         assert!(parallel.worker_thread.is_some());
     }
 
@@ -516,10 +518,12 @@ mod tests {
     fn parallel_default_creates_worker_thread() {
         let parallel = Parallel::default();
 
-        assert!(parallel
-            .message_sender
-            .send(ProgressMessage::Shutdown)
-            .is_ok());
+        assert!(
+            parallel
+                .message_sender
+                .send(ProgressMessage::Shutdown)
+                .is_ok()
+        );
         assert!(parallel.worker_thread.is_some());
     }
 
@@ -607,38 +611,50 @@ mod tests {
 
         let pb_ref = parallel.append("Test");
 
-        assert!(parallel
-            .message_sender
-            .send(ProgressMessage::SetMessage(
-                pb_ref,
-                "Test message".to_string(),
-            ))
-            .is_ok());
+        assert!(
+            parallel
+                .message_sender
+                .send(ProgressMessage::SetMessage(
+                    pb_ref,
+                    "Test message".to_string(),
+                ))
+                .is_ok()
+        );
 
-        assert!(parallel
-            .message_sender
-            .send(ProgressMessage::Println(pb_ref, "Test output".to_string(),))
-            .is_ok());
+        assert!(
+            parallel
+                .message_sender
+                .send(ProgressMessage::Println(pb_ref, "Test output".to_string(),))
+                .is_ok()
+        );
 
-        assert!(parallel
-            .message_sender
-            .send(ProgressMessage::Hide(pb_ref))
-            .is_ok());
+        assert!(
+            parallel
+                .message_sender
+                .send(ProgressMessage::Hide(pb_ref))
+                .is_ok()
+        );
 
-        assert!(parallel
-            .message_sender
-            .send(ProgressMessage::Show(pb_ref))
-            .is_ok());
+        assert!(
+            parallel
+                .message_sender
+                .send(ProgressMessage::Show(pb_ref))
+                .is_ok()
+        );
 
-        assert!(parallel
-            .message_sender
-            .send(ProgressMessage::Succeeded(pb_ref))
-            .is_ok());
+        assert!(
+            parallel
+                .message_sender
+                .send(ProgressMessage::Succeeded(pb_ref))
+                .is_ok()
+        );
 
-        assert!(parallel
-            .message_sender
-            .send(ProgressMessage::Shutdown)
-            .is_ok());
+        assert!(
+            parallel
+                .message_sender
+                .send(ProgressMessage::Shutdown)
+                .is_ok()
+        );
         if let Some(handle) = parallel.worker_thread.take() {
             let _ = handle.join();
         }
@@ -647,10 +663,12 @@ mod tests {
     #[test]
     fn parallel_worker_thread_processes_shutdown() {
         let parallel = Parallel::new();
-        assert!(parallel
-            .message_sender
-            .send(ProgressMessage::Shutdown)
-            .is_ok());
+        assert!(
+            parallel
+                .message_sender
+                .send(ProgressMessage::Shutdown)
+                .is_ok()
+        );
         let result = parallel.message_sender.send(ProgressMessage::Shutdown);
         assert!(result.is_ok())
     }
@@ -880,8 +898,8 @@ mod tests {
     fn many_concurrent_threads_same_progress_bar() {
         use crate::ProgressBar;
         use std::sync::{
-            atomic::{AtomicUsize, Ordering},
             Arc, Barrier,
+            atomic::{AtomicUsize, Ordering},
         };
 
         let mut parallel = ProgressBar::new(Parallel::boxed());

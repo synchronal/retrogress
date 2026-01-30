@@ -1,4 +1,4 @@
-use console::{style, Term};
+use console::{Term, style};
 use std::sync::LazyLock;
 use std::sync::{Arc, Mutex};
 

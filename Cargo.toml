@@ -2,7 +2,7 @@
 name = "retrogress"
 authors = ["Eric Saxby <sax@livinginthepast.org>", "synchonal.dev"]
 description = "Progress bars with a thin API around complex features"
-edition = "2021"
+edition = "2024"
 homepage = "https://github.com/synchronal"
 license = "MIT"
 readme = "README.md"

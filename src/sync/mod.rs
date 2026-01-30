@@ -1,6 +1,6 @@
+use crate::Progress;
 use crate::progress::Ref;
 use crate::render::Renderer;
-use crate::Progress;
 use console::Term;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
