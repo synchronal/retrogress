@@ -218,6 +218,18 @@ impl ProgressBar {
                             .set_prompt_input(input.clone());
                     }
                 }
+                Key::UnknownEscSeq(seq) if seq == ['\x7f'] => {
+                    let trimmed = input.trim_end();
+                    let end = trimmed
+                        .rfind(char::is_whitespace)
+                        .map(|i| i + 1)
+                        .unwrap_or(0);
+                    input.truncate(end);
+                    self.progress
+                        .lock()
+                        .unwrap()
+                        .set_prompt_input(input.clone());
+                }
                 _ => {}
             }
         }

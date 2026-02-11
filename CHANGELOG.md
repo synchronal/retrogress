@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Handle ^U in inputs.
+- Handle Ctrl+U and Alt+Backspace in inputs.
 - Use edition 2024.
 
 ## 1.4.0
