@@ -4,6 +4,7 @@
 
 - **Breaking change:** `prompt` returns
   `Result<String, retrogress::Error>` instead of `String`.
+- Handle Ctrl+C that may reach prompts.
 
 ## 1.5.0
 
