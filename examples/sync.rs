@@ -17,6 +17,8 @@ fn main() {
         }
     }
 
-    let input = progress.prompt("Here is a prompt for you to type something > ");
-    println!("Received input: {input}");
+    match progress.prompt("Here is a prompt for you to type something > ") {
+        Ok(msg) => println!("Received input: {msg}"),
+        Err(e) => eprintln!("Error reading input: {e}"),
+    }
 }

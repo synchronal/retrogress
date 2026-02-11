@@ -1,3 +1,4 @@
+use crate::Error;
 use console::{Key, Term};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
@@ -159,11 +160,11 @@ impl ProgressBar {
         progress.print_inline(msg);
         progress.render();
     }
-    pub fn prompt(&mut self, msg: &str) -> String {
+    pub fn prompt(&mut self, msg: &str) -> Result<String, Error> {
         self.progress.lock().unwrap().prompt(msg);
-        let input = self.read_input();
+        let result = self.read_input();
         self.progress.lock().unwrap().clear_prompt();
-        input.trim().into()
+        result.map(|input| input.trim().to_string())
     }
     pub fn set_message(&mut self, reference: Ref, msg: String) {
         self.progress.lock().unwrap().set_message(reference, msg)
@@ -189,51 +190,57 @@ impl ProgressBar {
         }
     }
 
-    fn read_input(&mut self) -> String {
+    fn read_input(&mut self) -> Result<String, Error> {
         let mut input = String::new();
 
         loop {
-            match Term::stdout().read_key().unwrap() {
-                Key::Enter => break,
-                Key::Char('\x15') => {
-                    input.clear();
-                    self.progress
-                        .lock()
-                        .unwrap()
-                        .set_prompt_input(input.clone());
-                }
-                Key::Char(c) => {
-                    input.push(c);
-                    self.progress
-                        .lock()
-                        .unwrap()
-                        .set_prompt_input(input.clone());
-                }
-                Key::Backspace => {
-                    if !input.is_empty() {
-                        input.pop();
+            match Term::stdout().read_key() {
+                Ok(key) => match key {
+                    Key::Enter => break,
+                    Key::Char('\x15') => {
+                        input.clear();
                         self.progress
                             .lock()
                             .unwrap()
                             .set_prompt_input(input.clone());
                     }
+                    Key::Char(c) => {
+                        input.push(c);
+                        self.progress
+                            .lock()
+                            .unwrap()
+                            .set_prompt_input(input.clone());
+                    }
+                    Key::Backspace => {
+                        if !input.is_empty() {
+                            input.pop();
+                            self.progress
+                                .lock()
+                                .unwrap()
+                                .set_prompt_input(input.clone());
+                        }
+                    }
+                    Key::UnknownEscSeq(seq) if seq == ['\x7f'] => {
+                        let trimmed = input.trim_end();
+                        let end = trimmed
+                            .rfind(char::is_whitespace)
+                            .map(|i| i + 1)
+                            .unwrap_or(0);
+                        input.truncate(end);
+                        self.progress
+                            .lock()
+                            .unwrap()
+                            .set_prompt_input(input.clone());
+                    }
+                    _ => {}
+                },
+                Err(ref e) if e.kind() == std::io::ErrorKind::Interrupted => {
+                    return Err(Error::Interrupted);
                 }
-                Key::UnknownEscSeq(seq) if seq == ['\x7f'] => {
-                    let trimmed = input.trim_end();
-                    let end = trimmed
-                        .rfind(char::is_whitespace)
-                        .map(|i| i + 1)
-                        .unwrap_or(0);
-                    input.truncate(end);
-                    self.progress
-                        .lock()
-                        .unwrap()
-                        .set_prompt_input(input.clone());
-                }
-                _ => {}
+                Err(e) => return Err(Error::IO(e)),
             }
         }
-        input
+        Ok(input)
     }
 }
 

@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- **Breaking change:** `prompt` returns
+  `Result<String, retrogress::Error>` instead of `String`.
+
 ## 1.5.0
 
 - Handle Ctrl+U and Alt+Backspace in inputs.

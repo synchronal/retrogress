@@ -16,11 +16,13 @@
 //! progress.succeeded(pb);
 //! ```
 
+pub mod error;
 pub mod parallel;
 pub mod progress;
 pub mod render;
 pub mod sync;
 
+pub use error::Error;
 pub use parallel::Parallel;
 pub use progress::Progress;
 pub use progress::ProgressBar;
