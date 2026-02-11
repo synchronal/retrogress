@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 1.5.0
+
 - Handle Ctrl+U and Alt+Backspace in inputs.
 - Use edition 2024.
 
