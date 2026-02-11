@@ -14,7 +14,7 @@ version = "1.4.0"
 console = "0.16"
 
 [dev-dependencies]
-rand = "0.9"
+rand = "0.10"
 
 [features]
 # Treat warnings as a build error.

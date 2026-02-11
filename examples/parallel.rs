@@ -1,5 +1,5 @@
 use console::style;
-use rand::Rng;
+use rand::RngExt;
 use std::{thread, time};
 
 fn main() {
