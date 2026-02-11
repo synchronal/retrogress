@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Handle ^U in inputs.
 - Use edition 2024.
 
 ## 1.4.0

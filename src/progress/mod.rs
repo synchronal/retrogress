@@ -195,6 +195,13 @@ impl ProgressBar {
         loop {
             match Term::stdout().read_key().unwrap() {
                 Key::Enter => break,
+                Key::Char('\x15') => {
+                    input.clear();
+                    self.progress
+                        .lock()
+                        .unwrap()
+                        .set_prompt_input(input.clone());
+                }
                 Key::Char(c) => {
                     input.push(c);
                     self.progress
