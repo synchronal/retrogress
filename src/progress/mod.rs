@@ -73,12 +73,34 @@ enum ProgressMessage {
     Shutdown,
 }
 
+#[derive(Clone)]
 pub struct ProgressBar {
     progress: Arc<Mutex<Box<dyn Progress>>>,
-    renderer: Arc<Mutex<Option<JoinHandle<()>>>>,
-    sender: Arc<Mutex<Sender<ProgressMessage>>>,
-    ticker: Arc<Mutex<Option<JoinHandle<()>>>>,
-    counter: *mut Counter,
+    _workers: Arc<Workers>,
+}
+
+/// The render and tick threads, shut down when the last `ProgressBar`
+/// clone drops.
+struct Workers {
+    sender: Sender<ProgressMessage>,
+    renderer: Option<JoinHandle<()>>,
+    ticker: Option<JoinHandle<()>>,
+}
+
+impl Drop for Workers {
+    fn drop(&mut self) {
+        let _ = self.sender.send(ProgressMessage::Shutdown);
+
+        if let Some(ticker) = self.ticker.take() {
+            let _ = ticker.join();
+        }
+        if let Some(renderer) = self.renderer.take() {
+            let _ = renderer.join();
+        }
+
+        let _ = Term::stdout().show_cursor();
+        let _ = Term::stderr().show_cursor();
+    }
 }
 
 impl std::fmt::Debug for ProgressBar {
@@ -93,34 +115,17 @@ impl From<Box<dyn Progress>> for ProgressBar {
     }
 }
 
-struct Counter(AtomicUsize);
-
-unsafe impl std::marker::Send for ProgressBar {}
-unsafe impl std::marker::Sync for ProgressBar {}
-
 impl ProgressBar {
-    fn counter(&self) -> &Counter {
-        unsafe { &*self.counter }
-    }
-
     pub fn new(bar: Box<dyn Progress>) -> Self {
         let _ = Term::stdout().hide_cursor();
         let _ = Term::stderr().hide_cursor();
 
         let (sender, receiver) = mpsc::channel();
-        let counter = Box::into_raw(Box::new(Counter(AtomicUsize::new(1))));
         let progress = Arc::new(Mutex::new(bar));
 
-        let progress_bar = Self {
-            progress: progress.clone(),
-            renderer: Arc::new(Mutex::new(None)),
-            sender: Arc::new(Mutex::new(sender.clone())),
-            ticker: Arc::new(Mutex::new(None)),
-            counter,
-        };
-
+        let renderer_progress = Arc::clone(&progress);
         let renderer = thread::spawn(move || {
-            Self::start_renderer(progress, receiver);
+            Self::start_renderer(renderer_progress, receiver);
         });
 
         let ticker_sender = sender.clone();
@@ -133,16 +138,14 @@ impl ProgressBar {
             }
         });
 
-        {
-            let mut render_handle = progress_bar.renderer.lock().unwrap();
-            *render_handle = Some(renderer);
+        Self {
+            progress,
+            _workers: Arc::new(Workers {
+                sender,
+                renderer: Some(renderer),
+                ticker: Some(ticker),
+            }),
         }
-        {
-            let mut ticker_handle = progress_bar.ticker.lock().unwrap();
-            *ticker_handle = Some(ticker);
-        }
-
-        progress_bar
     }
 
     pub fn append(&mut self, msg: &str) -> Ref {
@@ -254,41 +257,6 @@ impl ProgressBar {
     }
 }
 
-impl Clone for ProgressBar {
-    fn clone(&self) -> Self {
-        self.counter().0.fetch_add(1, Ordering::Relaxed);
-        Self {
-            progress: Arc::clone(&self.progress),
-            renderer: Arc::clone(&self.renderer),
-            sender: Arc::clone(&self.sender),
-            ticker: Arc::clone(&self.ticker),
-            counter: self.counter,
-        }
-    }
-}
-
-impl Drop for ProgressBar {
-    fn drop(&mut self) {
-        let counter = self.counter().0.fetch_sub(1, Ordering::AcqRel);
-        if counter == 1 {
-            let _ = self.sender.lock().unwrap().send(ProgressMessage::Shutdown);
-
-            let mut join_handle = self.ticker.lock().unwrap();
-            if let Some(ticker) = join_handle.take() {
-                let _ = ticker.join();
-            }
-
-            let mut join_handle = self.renderer.lock().unwrap();
-            if let Some(renderer) = join_handle.take() {
-                let _ = renderer.join();
-            }
-
-            let _ = Term::stdout().show_cursor();
-            let _ = Term::stderr().show_cursor();
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -305,11 +273,18 @@ mod tests {
         shown_refs: Arc<Mutex<Vec<Ref>>>,
         inline_calls: Arc<Mutex<Vec<String>>>,
         succeeded_refs: Arc<Mutex<Vec<Ref>>>,
+        dropped: Arc<std::sync::atomic::AtomicBool>,
     }
 
     impl MockProgress {
         fn new() -> Self {
             Self::default()
+        }
+    }
+
+    impl Drop for MockProgress {
+        fn drop(&mut self) {
+            self.dropped.store(true, Ordering::SeqCst);
         }
     }
 
@@ -518,6 +493,20 @@ mod tests {
 
         assert_send::<ProgressBar>();
         assert_sync::<ProgressBar>();
+    }
+
+    #[test]
+    fn progress_bar_shuts_down_when_last_clone_drops_on_another_thread() {
+        let mock = MockProgress::new();
+        let dropped = Arc::clone(&mock.dropped);
+        let progress_bar = ProgressBar::new(Box::new(mock));
+        let cloned = progress_bar.clone();
+
+        drop(progress_bar);
+        assert!(!dropped.load(Ordering::SeqCst));
+
+        thread::spawn(move || drop(cloned)).join().unwrap();
+        assert!(dropped.load(Ordering::SeqCst));
     }
 
     #[test]

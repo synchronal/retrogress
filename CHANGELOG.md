@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Stop leaking a `ProgressBar`'s clone counter, and remove its `unsafe`
+  `Send` and `Sync` impls.
 - Redraw the running Sync bar after output for another bar clears its
   line.
 - Don't print a blank line when a hidden Sync bar finishes.
