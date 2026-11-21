@@ -48,6 +48,14 @@ impl Sync {
             *current = None;
         }
     }
+
+    /// Whether redrawing `reference` should end its line. The current bar
+    /// redraws in place, and a hidden bar draws nothing, so only a visible
+    /// finished bar is reprinted onto a line of its own.
+    fn ends_line(&self, reference: Ref) -> bool {
+        let current = *self.current.lock().unwrap();
+        current != Some(reference) && self.bars.lock().unwrap()[&reference].is_visible()
+    }
 }
 
 impl Default for Sync {
@@ -148,7 +156,9 @@ impl Progress for Sync {
         };
         pb.set_message(msg);
         pb.render();
-        eprintln!();
+        if self.ends_line(reference) {
+            eprintln!();
+        }
     }
 
     fn set_prompt_input(&mut self, input: String) {
@@ -166,7 +176,9 @@ impl Progress for Sync {
         };
         pb.show();
         pb.render();
-        eprintln!();
+        if self.ends_line(reference) {
+            eprintln!();
+        }
     }
 
     fn succeeded(&mut self, reference: Ref) {
@@ -295,6 +307,36 @@ mod tests {
         let second = sync.append("Second task");
         sync.failed(second);
         assert_eq!(*sync.current.lock().unwrap(), None);
+    }
+
+    #[test]
+    fn sync_running_bar_redraws_in_place() {
+        let mut sync = Sync::new();
+        let pb = sync.append("Task");
+
+        sync.set_message(pb, "Updated".to_string());
+        sync.show(pb);
+
+        assert!(!sync.ends_line(pb));
+    }
+
+    #[test]
+    fn sync_finished_bar_ends_line_on_redraw() {
+        let mut sync = Sync::new();
+        let pb = sync.append("Task");
+        sync.succeeded(pb);
+
+        assert!(sync.ends_line(pb));
+    }
+
+    #[test]
+    fn sync_hidden_bar_does_not_end_line() {
+        let mut sync = Sync::new();
+        let pb = sync.append("Task");
+        sync.succeeded(pb);
+        sync.hide(pb);
+
+        assert!(!sync.ends_line(pb));
     }
 
     fn rendered(sync: &Sync, reference: Ref) -> String {

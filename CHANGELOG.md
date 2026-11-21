@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Only end the line after a Sync redraw when the bar is finished.
+- Stop Sync bars from redrawing over an active prompt.
 - Don't clear current bar when a stale Sync bar finishes.
 
 ## 2.0.0
