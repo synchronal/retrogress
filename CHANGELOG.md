@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 3.0.0
+
 - Add `Parallel::failure_output` to print all of a failed bar's output
   (`FailureOutput::Full`) or its last lines (`FailureOutput::Limit`), at
   full width.
