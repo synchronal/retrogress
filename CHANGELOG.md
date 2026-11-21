@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Add `Parallel::failure_output` to print all of a failed bar's output
+  (`FailureOutput::Full`) or its last lines (`FailureOutput::Limit`), at
+  full width.
 - Truncate a failed Parallel bar's output lines to the terminal width,
   like a running bar's.
 - Split Parallel output into lines and show bar messages on one line, so

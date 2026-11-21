@@ -15,6 +15,8 @@
 //! progress.println(pb, "Write another line");
 //! progress.succeeded(pb);
 //! ```
+//!
+//! The [`Parallel`] runner may be used to run multiple bars concurrently.
 
 pub mod error;
 pub mod parallel;
@@ -23,7 +25,7 @@ pub mod render;
 pub mod sync;
 
 pub use error::Error;
-pub use parallel::Parallel;
+pub use parallel::{FailureOutput, Parallel};
 pub use progress::Progress;
 pub use progress::ProgressBar;
 pub use sync::Sync;

@@ -13,9 +13,24 @@ use std::thread::{self, JoinHandle};
 static CLEAR_LINE: &str = "\x1b[2K";
 static CLEAR_TO_END: &str = "\x1b[J";
 static CURSOR_TO_LINE_START: &str = "\x1b[0G";
-/// How many of a bar's latest output lines are shown above it, and kept
-/// when it fails.
+/// How many of a bar's latest output lines are shown above it while it
+/// runs, and printed when it fails unless `FailureOutput` is set.
 const OUTPUT_TAIL_LINES: usize = 5;
+/// How many output lines a bar keeps when `FailureOutput` isn't set.
+const DEFAULT_RETAINED_LINES: usize = 1000;
+
+/// How much output a failed bar prints, set with
+/// [`Parallel::failure_output`]. Without it, a failed bar prints its last
+/// 5 lines, cut to the terminal width.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum FailureOutput {
+    /// Every line, at full width. A bar keeps all of its output in memory
+    /// until it finishes.
+    Full,
+    /// The last `max_lines` lines, at full width. A bar keeps only that
+    /// many lines in memory, but never fewer than it shows while running.
+    Limit { max_lines: usize },
+}
 
 #[derive(Debug)]
 enum ProgressMessage {
@@ -86,6 +101,7 @@ struct State {
     prompt_input: Option<String>,
     running: Vec<Ref>,
     inlines: Vec<String>,
+    failure_output: Option<FailureOutput>,
 }
 
 /// An implementation of `Progress` designed for parallel execution
@@ -97,6 +113,29 @@ struct State {
 /// ```rust
 /// use retrogress::{ProgressBar, Parallel};
 /// let mut progress = ProgressBar::new(Parallel::boxed());
+/// ```
+///
+/// # Output
+///
+/// A running bar shows the latest 5 lines passed to `println` above it,
+/// cut to the terminal width. A succeeded bar's output is dropped. A
+/// failed bar prints its latest 5 lines above the remaining bars, also
+/// cut to the terminal width.
+///
+/// To see more of a failure, pass a [`FailureOutput`] to
+/// [`Parallel::failure_output`]: `FailureOutput::Full` prints every line,
+/// and `FailureOutput::Limit { max_lines }` prints the last `max_lines`.
+/// Both print at full width.
+///
+/// ```rust
+/// use retrogress::{FailureOutput, Parallel, ProgressBar};
+///
+/// let parallel = Parallel::new().failure_output(FailureOutput::Full);
+/// let mut progress = ProgressBar::new(Box::new(parallel));
+///
+/// let pb = progress.append("Compiling");
+/// progress.println(pb, "error: something went wrong");
+/// progress.failed(pb); // prints every line passed to `println`
 /// ```
 pub struct Parallel {
     pub console_size: (u16, u16),
@@ -141,6 +180,18 @@ impl Parallel {
 
     pub fn boxed() -> Box<Self> {
         Box::new(Self::new())
+    }
+
+    /// Sets how much output a failed bar prints.
+    ///
+    /// ```rust
+    /// use retrogress::{FailureOutput, Parallel, ProgressBar};
+    /// let parallel = Parallel::new().failure_output(FailureOutput::Full);
+    /// let mut progress = ProgressBar::new(Box::new(parallel));
+    /// ```
+    pub fn failure_output(self, output: FailureOutput) -> Self {
+        self.state.lock().unwrap().failure_output = Some(output);
+        self
     }
 
     /// Panics if `reference` was never appended or has already finished.
@@ -195,6 +246,7 @@ impl Parallel {
                 }
                 ProgressMessage::Println(reference, message) => {
                     let mut state = state.lock().unwrap();
+                    let retained = retained_lines(state.failure_output);
                     let bar = state.bars.get_mut(&reference).unwrap();
                     // One entry per line, so the live region's row count
                     // matches the terminal's.
@@ -204,10 +256,9 @@ impl Parallel {
                         bar.output_buffer.extend(message.lines().map(String::from));
                     }
 
-                    // Trim buffer to keep only the last 1000 lines
-                    if bar.output_buffer.len() > 1000 {
-                        let excess = bar.output_buffer.len() - 1000;
-                        bar.output_buffer.drain(0..excess);
+                    if let Some(retained) = retained {
+                        let excess = bar.output_buffer.len().saturating_sub(retained);
+                        bar.output_buffer.drain(..excess);
                     }
                 }
                 ProgressMessage::Prompt(message) => {
@@ -329,12 +380,13 @@ impl Progress for Parallel {
             pre_output.push('\n');
         }
 
+        let failure_output = state.failure_output;
         let mut finished = std::mem::take(&mut state.finished);
         for reference in finished.drain(..) {
             let bar_state = state.bars.remove(&reference).unwrap();
 
             if bar_state.status == Status::Failed {
-                for line in output_tail(&bar_state.output_buffer, width) {
+                for line in failure_lines(&bar_state.output_buffer, failure_output, width) {
                     pre_output.push_str(&line);
                     pre_output.push('\n');
                 }
@@ -481,6 +533,33 @@ fn output_tail(output: &[String], width: usize) -> impl Iterator<Item = Cow<'_, 
         .map(move |line| fit_to_width(line, width))
 }
 
+/// The output a failed bar prints, per its `FailureOutput` setting.
+fn failure_lines(
+    output: &[String],
+    failure_output: Option<FailureOutput>,
+    width: usize,
+) -> Vec<Cow<'_, str>> {
+    let max_lines = match failure_output {
+        None => return output_tail(output, width).collect(),
+        Some(FailureOutput::Full) => output.len(),
+        Some(FailureOutput::Limit { max_lines }) => max_lines,
+    };
+    let start = output.len().saturating_sub(max_lines);
+    output[start..]
+        .iter()
+        .map(|line| Cow::from(line.as_str()))
+        .collect()
+}
+
+/// How many of a bar's latest output lines to keep, or `None` for all.
+fn retained_lines(failure_output: Option<FailureOutput>) -> Option<usize> {
+    match failure_output {
+        None => Some(DEFAULT_RETAINED_LINES),
+        Some(FailureOutput::Full) => None,
+        Some(FailureOutput::Limit { max_lines }) => Some(max_lines.max(OUTPUT_TAIL_LINES)),
+    }
+}
+
 fn write_line(buf: &mut String, content: &str) {
     buf.push('\r');
     buf.push_str(CLEAR_LINE);
@@ -561,6 +640,79 @@ mod tests {
         let rows = parallel.state.lock().unwrap().back_buffer.clone();
         assert_eq!(rows.len(), 6, "last 5 output lines plus the bar");
         assert!(rows.iter().all(|line| !line.contains('\n')), "{rows:?}");
+    }
+
+    fn long_output() -> Vec<String> {
+        (0..8).map(|i| format!("{i} {}", "x".repeat(100))).collect()
+    }
+
+    #[test]
+    fn failure_lines_default_to_truncated_tail() {
+        let output = long_output();
+
+        let lines = failure_lines(&output, None, 20);
+
+        assert_eq!(lines.len(), 5);
+        assert!(lines.iter().all(|line| line.ends_with('…')), "{lines:?}");
+    }
+
+    #[test]
+    fn failure_lines_full_prints_everything_at_full_width() {
+        let output = long_output();
+
+        let lines = failure_lines(&output, Some(FailureOutput::Full), 20);
+
+        assert_eq!(lines, output);
+    }
+
+    #[test]
+    fn failure_lines_limit_prints_last_lines_at_full_width() {
+        let output = long_output();
+
+        let lines = failure_lines(&output, Some(FailureOutput::Limit { max_lines: 3 }), 20);
+
+        assert_eq!(lines, output[5..]);
+    }
+
+    /// Prints `lines` lines to one bar and reports how many it kept.
+    fn retained_after(parallel: Parallel, lines: usize) -> usize {
+        let mut parallel = parallel;
+        let pb = parallel.append("Task");
+        let output: Vec<String> = (0..lines).map(|i| i.to_string()).collect();
+        parallel.println(pb, &output.join("\n"));
+        parallel.set_message(pb, "processed".to_string());
+        wait_for(|| {
+            let state = parallel.state.lock().unwrap();
+            state
+                .bars
+                .get(&pb)
+                .is_some_and(|bar| bar.bar.to_string().contains("processed"))
+        });
+        parallel.state.lock().unwrap().bars[&pb].output_buffer.len()
+    }
+
+    #[test]
+    fn failure_output_sets_how_much_output_is_kept() {
+        assert_eq!(retained_after(Parallel::new(), 1500), 1000);
+        assert_eq!(
+            retained_after(Parallel::new().failure_output(FailureOutput::Full), 1500),
+            1500
+        );
+        assert_eq!(
+            retained_after(
+                Parallel::new().failure_output(FailureOutput::Limit { max_lines: 10 }),
+                1500
+            ),
+            10
+        );
+        // Never fewer than a running bar shows.
+        assert_eq!(
+            retained_after(
+                Parallel::new().failure_output(FailureOutput::Limit { max_lines: 2 }),
+                1500
+            ),
+            OUTPUT_TAIL_LINES
+        );
     }
 
     #[test]
