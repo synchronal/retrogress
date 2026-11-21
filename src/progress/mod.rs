@@ -31,6 +31,14 @@ impl std::fmt::Display for Ref {
     }
 }
 
+/// Panics for a reference that was never appended or has already
+/// finished, so every implementation reports misuse the same way.
+#[cold]
+#[track_caller]
+pub(crate) fn unknown_bar(reference: Ref) -> ! {
+    panic!("unknown progress bar {reference}")
+}
+
 /// Progress is a trait that may be implemented to create new progress bar
 /// behaviors. Its normal usage is as a `Box<dyn Progress>` that can be
 /// put into a `ProgressBar`.
@@ -318,6 +326,12 @@ mod tests {
         fn succeeded(&mut self, reference: Ref) {
             self.succeeded_refs.lock().unwrap().push(reference);
         }
+    }
+
+    #[test]
+    #[should_panic(expected = "unknown progress bar #Ref<")]
+    fn unknown_bar_names_the_reference() {
+        unknown_bar(Ref::new());
     }
 
     #[test]

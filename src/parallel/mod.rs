@@ -1,5 +1,5 @@
 use crate::Progress;
-use crate::progress::Ref;
+use crate::progress::{Ref, unknown_bar};
 use crate::render::{Renderer, fit_to_width};
 
 use console::Term;
@@ -145,18 +145,16 @@ impl Parallel {
 
     /// Panics if `reference` was never appended or has already finished.
     fn check(&self, reference: Ref) {
-        assert!(
-            self.live.contains(&reference),
-            "unknown progress bar {reference}"
-        );
+        if !self.live.contains(&reference) {
+            unknown_bar(reference);
+        }
     }
 
     /// Marks a finishing bar as no longer live, panicking like `check`.
     fn retire(&mut self, reference: Ref) {
-        assert!(
-            self.live.remove(&reference),
-            "unknown progress bar {reference}"
-        );
+        if !self.live.remove(&reference) {
+            unknown_bar(reference);
+        }
     }
 
     fn progress_worker(receiver: Receiver<ProgressMessage>, state: Arc<Mutex<State>>) {

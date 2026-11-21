@@ -1,5 +1,5 @@
 use crate::Progress;
-use crate::progress::Ref;
+use crate::progress::{Ref, unknown_bar};
 use crate::render::Renderer;
 use console::Term;
 use std::collections::HashMap;
@@ -48,7 +48,7 @@ impl Sync {
             .unwrap()
             .get(&reference)
             .cloned()
-            .unwrap_or_else(|| panic!("unknown progress bar {reference}"))
+            .unwrap_or_else(|| unknown_bar(reference))
     }
 
     /// Removes a finishing bar, panicking like `bar`.
@@ -57,7 +57,7 @@ impl Sync {
             .lock()
             .unwrap()
             .remove(&reference)
-            .unwrap_or_else(|| panic!("unknown progress bar {reference}"))
+            .unwrap_or_else(|| unknown_bar(reference))
     }
 
     /// Stops rendering `reference` if it is the current bar. A bar
