@@ -1,8 +1,9 @@
 use crate::Progress;
 use crate::progress::Ref;
-use crate::render::Renderer;
+use crate::render::{Renderer, fit_to_width};
 
 use console::Term;
+use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Write;
 use std::sync::mpsc::{self, Receiver, Sender};
@@ -12,6 +13,9 @@ use std::thread::{self, JoinHandle};
 static CLEAR_LINE: &str = "\x1b[2K";
 static CLEAR_TO_END: &str = "\x1b[J";
 static CURSOR_TO_LINE_START: &str = "\x1b[0G";
+/// How many of a bar's latest output lines are shown above it, and kept
+/// when it fails.
+const OUTPUT_TAIL_LINES: usize = 5;
 
 #[derive(Debug)]
 enum ProgressMessage {
@@ -332,21 +336,15 @@ impl Progress for Parallel {
             let bar_state = state.bars.remove(&reference).unwrap();
 
             if bar_state.status == Status::Failed {
-                let start_idx = if bar_state.output_buffer.len() > 5 {
-                    bar_state.output_buffer.len() - 5
-                } else {
-                    0
-                };
-                for line in &bar_state.output_buffer[start_idx..] {
-                    pre_output.push_str(line);
+                for line in output_tail(&bar_state.output_buffer, width) {
+                    pre_output.push_str(&line);
                     pre_output.push('\n');
                 }
             }
 
             let rendered = bar_state.bar.to_string();
             if !rendered.is_empty() {
-                let truncated = console::truncate_str(&rendered, width.saturating_sub(1), "…");
-                pre_output.push_str(&truncated);
+                pre_output.push_str(&fit_to_width(&rendered, width));
                 pre_output.push('\n');
             }
         }
@@ -357,23 +355,12 @@ impl Progress for Parallel {
         let running = state.running.clone();
         for reference in &running {
             let bar_state = state.bars.get_mut(reference).unwrap();
-            let start_idx = if bar_state.output_buffer.len() > 5 {
-                bar_state.output_buffer.len() - 5
-            } else {
-                0
-            };
-            for line in &bar_state.output_buffer[start_idx..] {
-                let truncated_line =
-                    console::truncate_str(line, width.saturating_sub(1), "…").to_string();
-                current_lines.push(truncated_line);
-            }
+            current_lines.extend(output_tail(&bar_state.output_buffer, width).map(Cow::into_owned));
 
             bar_state.bar.tick();
             let rendered = bar_state.bar.to_string();
             if !rendered.is_empty() {
-                let truncated =
-                    console::truncate_str(&rendered, width.saturating_sub(1), "…").to_string();
-                current_lines.push(truncated);
+                current_lines.push(fit_to_width(&rendered, width).into_owned());
             }
         }
 
@@ -488,6 +475,14 @@ impl Progress for Parallel {
     }
 }
 
+/// The last few lines of a bar's output, each cut to fit `width`.
+fn output_tail(output: &[String], width: usize) -> impl Iterator<Item = Cow<'_, str>> {
+    let start = output.len().saturating_sub(OUTPUT_TAIL_LINES);
+    output[start..]
+        .iter()
+        .map(move |line| fit_to_width(line, width))
+}
+
 fn write_line(buf: &mut String, content: &str) {
     buf.push('\r');
     buf.push_str(CLEAR_LINE);
@@ -568,6 +563,21 @@ mod tests {
         let rows = parallel.state.lock().unwrap().back_buffer.clone();
         assert_eq!(rows.len(), 6, "last 5 output lines plus the bar");
         assert!(rows.iter().all(|line| !line.contains('\n')), "{rows:?}");
+    }
+
+    #[test]
+    fn output_tail_keeps_last_lines_within_width() {
+        let output: Vec<String> = (0..7).map(|i| format!("{i} {}", "x".repeat(100))).collect();
+
+        let tail: Vec<_> = output_tail(&output, 20).collect();
+
+        assert_eq!(tail.len(), 5);
+        assert!(tail[0].starts_with("2 "), "{tail:?}");
+        assert!(
+            tail.iter()
+                .all(|line| console::measure_text_width(line) < 20),
+            "{tail:?}"
+        );
     }
 
     #[test]

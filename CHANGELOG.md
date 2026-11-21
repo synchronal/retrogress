@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Truncate a failed Parallel bar's output lines to the terminal width,
+  like a running bar's.
 - Split Parallel output into lines and show bar messages on one line, so
   newlines no longer break the redraw.
 - Re-read the terminal size from stderr on every Parallel render, so

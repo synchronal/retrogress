@@ -1,4 +1,5 @@
 use console::{Term, style};
+use std::borrow::Cow;
 use std::sync::LazyLock;
 use std::sync::{Arc, Mutex};
 
@@ -156,13 +157,18 @@ impl Renderer {
         drop(state);
 
         let term = Term::stderr();
-        let width = term.size().1 as usize;
-        let truncated = console::truncate_str(&output, width.saturating_sub(1), "…");
+        let truncated = fit_to_width(&output, term.size().1 as usize);
 
         term.clear_line().unwrap();
         eprint!("{}", truncated);
         term.flush().unwrap();
     }
+}
+
+/// Cuts `line` to fit a terminal `width` columns wide, ending it with `…`
+/// when cut. The last column stays free so the cursor never wraps.
+pub(crate) fn fit_to_width(line: &str, width: usize) -> Cow<'_, str> {
+    console::truncate_str(line, width.saturating_sub(1), "…")
 }
 
 impl std::fmt::Display for Renderer {
@@ -284,6 +290,16 @@ mod tests {
             let cloned_state = pb_clone.state.lock().unwrap();
             assert_eq!(cloned_state.message, "New message");
         }
+    }
+
+    #[test]
+    fn fit_to_width_leaves_last_column_free() {
+        let long = "x".repeat(100);
+        let fitted = fit_to_width(&long, 20);
+
+        assert_eq!(console::measure_text_width(&fitted), 19);
+        assert!(fitted.ends_with('…'));
+        assert_eq!(fit_to_width("short", 20), "short");
     }
 
     #[test]
