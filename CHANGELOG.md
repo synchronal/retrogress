@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Don't clear current bar when a stale Sync bar finishes.
+
 ## 2.0.0
 
 - **Breaking change:** `prompt` returns

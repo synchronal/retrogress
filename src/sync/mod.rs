@@ -39,6 +39,15 @@ impl Sync {
     pub fn boxed() -> Box<Self> {
         Box::new(Self::new())
     }
+
+    /// Stops rendering `reference` if it is the current bar. A bar
+    /// appended later stays current.
+    fn release(&self, reference: Ref) {
+        let mut current = self.current.lock().unwrap();
+        if *current == Some(reference) {
+            *current = None;
+        }
+    }
 }
 
 impl Default for Sync {
@@ -77,8 +86,7 @@ impl Progress for Sync {
 
         eprintln!();
 
-        let mut current = self.current.lock().unwrap();
-        *current = None;
+        self.release(reference);
     }
 
     fn hide(&mut self, reference: Ref) {
@@ -158,8 +166,7 @@ impl Progress for Sync {
 
         eprintln!();
 
-        let mut current = self.current.lock().unwrap();
-        *current = None;
+        self.release(reference);
     }
 }
 
@@ -241,6 +248,40 @@ mod tests {
 
         // This operation should not panic with a valid reference
         sync.failed(pb_ref);
+    }
+
+    #[test]
+    fn sync_succeeded_on_stale_bar_keeps_current() {
+        let mut sync = Sync::new();
+        let first = sync.append("First task");
+        let second = sync.append("Second task");
+
+        sync.succeeded(first);
+
+        assert_eq!(*sync.current.lock().unwrap(), Some(second));
+    }
+
+    #[test]
+    fn sync_failed_on_stale_bar_keeps_current() {
+        let mut sync = Sync::new();
+        let first = sync.append("First task");
+        let second = sync.append("Second task");
+
+        sync.failed(first);
+
+        assert_eq!(*sync.current.lock().unwrap(), Some(second));
+    }
+
+    #[test]
+    fn sync_finishing_current_bar_clears_current() {
+        let mut sync = Sync::new();
+        let first = sync.append("First task");
+        sync.succeeded(first);
+        assert_eq!(*sync.current.lock().unwrap(), None);
+
+        let second = sync.append("Second task");
+        sync.failed(second);
+        assert_eq!(*sync.current.lock().unwrap(), None);
     }
 
     #[test]
