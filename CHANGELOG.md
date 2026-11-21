@@ -5,14 +5,22 @@
 - Redraw the running Sync bar after output for another bar clears its
   line.
 - Don't print a blank line when a hidden Sync bar finishes.
-- Only end the line after a Sync redraw when the bar is finished.
+- Only end the line after a Sync redraw when the bar is no longer
+  current.
 - Stop Sync bars from redrawing over an active prompt.
 - Don't clear current bar when a stale Sync bar finishes.
 
+### Breaking changes
+
+- Sync drops bar refs when they succeeds or fails, so using reference
+  afterwards now panics.
+
 ## 2.0.0
 
-- **Breaking change:** `prompt` returns
-  `Result<String, retrogress::Error>` instead of `String`.
+### Breaking changes
+
+- `prompt` returns `Result<String, retrogress::Error>` instead of
+  `String`.
 - Handle Ctrl+C that may reach prompts.
 
 ## 1.5.0

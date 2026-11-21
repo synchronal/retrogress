@@ -40,6 +40,26 @@ impl Sync {
         Box::new(Self::new())
     }
 
+    /// Looks up `reference`, panicking if it was never appended or has
+    /// already finished.
+    fn bar(&self, reference: Ref) -> Renderer {
+        self.bars
+            .lock()
+            .unwrap()
+            .get(&reference)
+            .cloned()
+            .unwrap_or_else(|| panic!("unknown progress bar {reference}"))
+    }
+
+    /// Removes a finishing bar, panicking like `bar`.
+    fn take_bar(&self, reference: Ref) -> Renderer {
+        self.bars
+            .lock()
+            .unwrap()
+            .remove(&reference)
+            .unwrap_or_else(|| panic!("unknown progress bar {reference}"))
+    }
+
     /// Stops rendering `reference` if it is the current bar. A bar
     /// appended later stays current.
     fn release(&self, reference: Ref) {
@@ -67,10 +87,10 @@ impl Sync {
 
     /// Whether redrawing `reference` should end its line. The current bar
     /// redraws in place, and a hidden bar draws nothing, so only a visible
-    /// finished bar is reprinted onto a line of its own.
+    /// bar that is no longer current is reprinted onto a line of its own.
     fn ends_line(&self, reference: Ref) -> bool {
         let current = *self.current.lock().unwrap();
-        current != Some(reference) && self.bars.lock().unwrap()[&reference].is_visible()
+        current != Some(reference) && self.bar(reference).is_visible()
     }
 }
 
@@ -101,10 +121,7 @@ impl Progress for Sync {
     }
 
     fn failed(&mut self, reference: Ref) {
-        let pb = {
-            let bars = self.bars.lock().unwrap();
-            bars.get(&reference).unwrap().clone()
-        };
+        let pb = self.take_bar(reference);
         pb.failed();
         pb.render();
         if pb.is_visible() {
@@ -116,20 +133,12 @@ impl Progress for Sync {
     }
 
     fn hide(&mut self, reference: Ref) {
-        let pb = {
-            let bars = self.bars.lock().unwrap();
-            bars.get(&reference).unwrap().clone()
-        };
-        pb.hide();
+        self.bar(reference).hide();
         self.redraw_live();
     }
 
     fn println(&mut self, reference: Ref, msg: &str) {
-        let pb = {
-            let bars = self.bars.lock().unwrap();
-            bars.get(&reference).unwrap().clone()
-        };
-        pb.println(msg);
+        self.bar(reference).println(msg);
         self.redraw_live();
     }
 
@@ -156,10 +165,7 @@ impl Progress for Sync {
     }
 
     fn set_message(&mut self, reference: Ref, msg: String) {
-        let pb = {
-            let bars = self.bars.lock().unwrap();
-            bars.get(&reference).unwrap().clone()
-        };
+        let pb = self.bar(reference);
         pb.set_message(msg);
         pb.render();
         if self.ends_line(reference) {
@@ -177,10 +183,7 @@ impl Progress for Sync {
     }
 
     fn show(&mut self, reference: Ref) {
-        let pb = {
-            let bars = self.bars.lock().unwrap();
-            bars.get(&reference).unwrap().clone()
-        };
+        let pb = self.bar(reference);
         pb.show();
         pb.render();
         if self.ends_line(reference) {
@@ -190,10 +193,7 @@ impl Progress for Sync {
     }
 
     fn succeeded(&mut self, reference: Ref) {
-        let pb = {
-            let bars = self.bars.lock().unwrap();
-            bars.get(&reference).unwrap().clone()
-        };
+        let pb = self.take_bar(reference);
         pb.succeeded();
         pb.render();
         if pb.is_visible() {
@@ -331,22 +331,64 @@ mod tests {
     }
 
     #[test]
-    fn sync_finished_bar_ends_line_on_redraw() {
+    fn sync_stale_bar_ends_line_on_redraw() {
         let mut sync = Sync::new();
-        let pb = sync.append("Task");
-        sync.succeeded(pb);
+        let stale = sync.append("First task");
+        sync.append("Second task");
 
-        assert!(sync.ends_line(pb));
+        assert!(sync.ends_line(stale));
     }
 
     #[test]
     fn sync_hidden_bar_does_not_end_line() {
         let mut sync = Sync::new();
+        let stale = sync.append("First task");
+        sync.append("Second task");
+        sync.hide(stale);
+
+        assert!(!sync.ends_line(stale));
+    }
+
+    #[test]
+    fn sync_finishing_removes_bar() {
+        let mut sync = Sync::new();
+        let first = sync.append("First task");
+        let second = sync.append("Second task");
+
+        sync.succeeded(first);
+        sync.failed(second);
+
+        assert!(sync.bars.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    #[should_panic(expected = "unknown progress bar")]
+    fn sync_set_message_panics_after_succeeded() {
+        let mut sync = Sync::new();
         let pb = sync.append("Task");
         sync.succeeded(pb);
-        sync.hide(pb);
 
-        assert!(!sync.ends_line(pb));
+        sync.set_message(pb, "Too late".to_string());
+    }
+
+    #[test]
+    #[should_panic(expected = "unknown progress bar")]
+    fn sync_println_panics_after_failed() {
+        let mut sync = Sync::new();
+        let pb = sync.append("Task");
+        sync.failed(pb);
+
+        sync.println(pb, "Too late");
+    }
+
+    #[test]
+    #[should_panic(expected = "unknown progress bar")]
+    fn sync_succeeded_panics_when_finished_twice() {
+        let mut sync = Sync::new();
+        let pb = sync.append("Task");
+        sync.succeeded(pb);
+
+        sync.succeeded(pb);
     }
 
     fn rendered(sync: &Sync, reference: Ref) -> String {

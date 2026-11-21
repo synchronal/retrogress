@@ -40,7 +40,8 @@ pub trait Progress: Send + Sync {
     fn append(&mut self, msg: &str) -> Ref;
     /// Called after prompt input is received.
     fn clear_prompt(&mut self);
-    /// Mark the given progress bar as failed.
+    /// Mark the given progress bar as failed. The reference must not be
+    /// used afterwards.
     fn failed(&mut self, references: Ref);
     /// Hides the given progress bar.
     fn hide(&mut self, reference: Ref);
@@ -62,7 +63,8 @@ pub trait Progress: Send + Sync {
     fn set_prompt_input(&mut self, input: String);
     /// Shows the given progress bar.
     fn show(&mut self, reference: Ref);
-    /// Mark the given progress bar as succeeded.
+    /// Mark the given progress bar as succeeded. The reference must not be
+    /// used afterwards.
     fn succeeded(&mut self, reference: Ref);
 }
 
