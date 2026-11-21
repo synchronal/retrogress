@@ -91,8 +91,9 @@ impl Progress for Sync {
         };
         pb.failed();
         pb.render();
-
-        eprintln!();
+        if pb.is_visible() {
+            eprintln!();
+        }
 
         self.release(reference);
     }
@@ -188,8 +189,9 @@ impl Progress for Sync {
         };
         pb.succeeded();
         pb.render();
-
-        eprintln!();
+        if pb.is_visible() {
+            eprintln!();
+        }
 
         self.release(reference);
     }
