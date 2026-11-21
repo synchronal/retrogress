@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Split Parallel output into lines and show bar messages on one line, so
+  newlines no longer break the redraw.
 - Re-read the terminal size from stderr on every Parallel render, so
   resizes take effect.
 - Drop a `ProgressBar` without waiting up to 80ms for its next tick.

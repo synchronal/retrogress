@@ -30,12 +30,29 @@ impl std::fmt::Display for RendererState {
             return write!(f, "");
         }
 
+        let message = JoinedLines(&self.message);
         if self.finished {
-            write!(f, "{} {}", self.prefix, self.message)
+            write!(f, "{} {}", self.prefix, message)
         } else {
             let spinner = SPINNER_CHARS[self.spinner_index];
-            write!(f, "{} {} {}", self.prefix, spinner, self.message)
+            write!(f, "{} {} {}", self.prefix, spinner, message)
         }
+    }
+}
+
+/// Displays text with its lines joined by spaces, since a bar is redrawn
+/// as a single row.
+struct JoinedLines<'a>(&'a str);
+
+impl std::fmt::Display for JoinedLines<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for (index, line) in self.0.lines().enumerate() {
+            if index > 0 {
+                f.write_str(" ")?;
+            }
+            f.write_str(line)?;
+        }
+        Ok(())
     }
 }
 
@@ -267,6 +284,15 @@ mod tests {
             let cloned_state = pb_clone.state.lock().unwrap();
             assert_eq!(cloned_state.message, "New message");
         }
+    }
+
+    #[test]
+    fn renderer_display_keeps_message_on_one_line() {
+        let pb = Renderer::new("one\ntwo\r\nthree".to_string());
+
+        let rendered = pb.to_string();
+
+        assert!(rendered.ends_with("one two three"), "{rendered:?}");
     }
 
     #[test]

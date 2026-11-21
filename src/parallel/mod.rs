@@ -194,7 +194,13 @@ impl Parallel {
                 ProgressMessage::Println(reference, message) => {
                     let mut state = state.lock().unwrap();
                     let bar = state.bars.get_mut(&reference).unwrap();
-                    bar.output_buffer.push(message);
+                    // One entry per line, so the live region's row count
+                    // matches the terminal's.
+                    if message.is_empty() {
+                        bar.output_buffer.push(message);
+                    } else {
+                        bar.output_buffer.extend(message.lines().map(String::from));
+                    }
 
                     // Trim buffer to keep only the last 1000 lines
                     if bar.output_buffer.len() > 1000 {
@@ -518,6 +524,50 @@ mod tests {
 
         let next = parallel.append("Next");
         wait_for(|| parallel.state.lock().unwrap().bars.contains_key(&next));
+    }
+
+    #[test]
+    fn parallel_println_splits_multiline_output() {
+        let mut parallel = Parallel::new();
+        let pb = parallel.append("Task");
+
+        parallel.println(pb, "one\ntwo\r\nthree");
+        parallel.println(pb, "");
+        parallel.set_message(pb, "processed".to_string());
+        wait_for(|| {
+            let state = parallel.state.lock().unwrap();
+            state
+                .bars
+                .get(&pb)
+                .is_some_and(|bar| bar.bar.to_string().contains("processed"))
+        });
+
+        // Copy out first: panicking with the lock held would poison it.
+        let output = parallel.state.lock().unwrap().bars[&pb]
+            .output_buffer
+            .clone();
+        assert_eq!(output, vec!["one", "two", "three", ""]);
+    }
+
+    #[test]
+    fn parallel_live_region_has_one_row_per_line() {
+        let mut parallel = Parallel::new();
+        let pb = parallel.append("Task");
+        parallel.set_message(pb, "status\nwith a newline".to_string());
+        parallel.println(pb, "a\nb\nc\nd\ne\nf");
+        wait_for(|| {
+            let state = parallel.state.lock().unwrap();
+            state
+                .bars
+                .get(&pb)
+                .is_some_and(|bar| !bar.output_buffer.is_empty())
+        });
+
+        parallel.render();
+
+        let rows = parallel.state.lock().unwrap().back_buffer.clone();
+        assert_eq!(rows.len(), 6, "last 5 output lines plus the bar");
+        assert!(rows.iter().all(|line| !line.contains('\n')), "{rows:?}");
     }
 
     #[test]
