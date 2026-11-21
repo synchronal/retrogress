@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Drop a `ProgressBar` without waiting up to 80ms for its next tick.
 - Stop leaking a `ProgressBar`'s clone counter, and remove its `unsafe`
   `Send` and `Sync` impls.
 - Redraw the running Sync bar after output for another bar clears its

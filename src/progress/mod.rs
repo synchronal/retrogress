@@ -1,7 +1,7 @@
 use crate::Error;
 use console::{Key, Term};
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::mpsc::{self, Receiver, Sender};
+use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
@@ -68,10 +68,7 @@ pub trait Progress: Send + Sync {
     fn succeeded(&mut self, reference: Ref);
 }
 
-enum ProgressMessage {
-    Tick,
-    Shutdown,
-}
+const TICK: Duration = Duration::from_millis(80);
 
 #[derive(Clone)]
 pub struct ProgressBar {
@@ -79,21 +76,16 @@ pub struct ProgressBar {
     _workers: Arc<Workers>,
 }
 
-/// The render and tick threads, shut down when the last `ProgressBar`
-/// clone drops.
+/// The render thread, shut down when the last `ProgressBar` clone drops.
 struct Workers {
-    sender: Sender<ProgressMessage>,
+    shutdown: Sender<()>,
     renderer: Option<JoinHandle<()>>,
-    ticker: Option<JoinHandle<()>>,
 }
 
 impl Drop for Workers {
     fn drop(&mut self) {
-        let _ = self.sender.send(ProgressMessage::Shutdown);
+        let _ = self.shutdown.send(());
 
-        if let Some(ticker) = self.ticker.take() {
-            let _ = ticker.join();
-        }
         if let Some(renderer) = self.renderer.take() {
             let _ = renderer.join();
         }
@@ -120,7 +112,7 @@ impl ProgressBar {
         let _ = Term::stdout().hide_cursor();
         let _ = Term::stderr().hide_cursor();
 
-        let (sender, receiver) = mpsc::channel();
+        let (shutdown, receiver) = mpsc::channel();
         let progress = Arc::new(Mutex::new(bar));
 
         let renderer_progress = Arc::clone(&progress);
@@ -128,22 +120,11 @@ impl ProgressBar {
             Self::start_renderer(renderer_progress, receiver);
         });
 
-        let ticker_sender = sender.clone();
-        let ticker = thread::spawn(move || {
-            loop {
-                thread::sleep(Duration::from_millis(80));
-                if ticker_sender.send(ProgressMessage::Tick).is_err() {
-                    break;
-                }
-            }
-        });
-
         Self {
             progress,
             _workers: Arc::new(Workers {
-                sender,
+                shutdown,
                 renderer: Some(renderer),
-                ticker: Some(ticker),
             }),
         }
     }
@@ -181,17 +162,10 @@ impl ProgressBar {
         self.progress.lock().unwrap().succeeded(reference)
     }
 
-    fn start_renderer(
-        progress: Arc<Mutex<Box<dyn Progress>>>,
-        receiver: Receiver<ProgressMessage>,
-    ) {
-        while let Ok(message) = receiver.recv() {
-            match message {
-                ProgressMessage::Tick => progress.lock().unwrap().render(),
-                ProgressMessage::Shutdown => {
-                    break;
-                }
-            }
+    /// Renders once per tick, returning as soon as shutdown is signalled.
+    fn start_renderer(progress: Arc<Mutex<Box<dyn Progress>>>, shutdown: Receiver<()>) {
+        while let Err(RecvTimeoutError::Timeout) = shutdown.recv_timeout(TICK) {
+            progress.lock().unwrap().render();
         }
     }
 
@@ -274,6 +248,7 @@ mod tests {
         inline_calls: Arc<Mutex<Vec<String>>>,
         succeeded_refs: Arc<Mutex<Vec<Ref>>>,
         dropped: Arc<std::sync::atomic::AtomicBool>,
+        renders: Arc<AtomicUsize>,
     }
 
     impl MockProgress {
@@ -323,7 +298,9 @@ mod tests {
             self.prompt_calls.lock().unwrap().push(msg.to_string());
         }
 
-        fn render(&mut self) {}
+        fn render(&mut self) {
+            self.renders.fetch_add(1, Ordering::SeqCst);
+        }
 
         fn set_message(&mut self, reference: Ref, msg: String) {
             self.set_message_calls
@@ -507,6 +484,28 @@ mod tests {
 
         thread::spawn(move || drop(cloned)).join().unwrap();
         assert!(dropped.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn progress_bar_renders_periodically() {
+        let mock = MockProgress::new();
+        let renders = Arc::clone(&mock.renders);
+        let progress_bar = ProgressBar::new(Box::new(mock));
+
+        thread::sleep(Duration::from_millis(300));
+        drop(progress_bar);
+
+        assert!(renders.load(Ordering::SeqCst) >= 2);
+    }
+
+    #[test]
+    fn progress_bar_drop_does_not_wait_for_next_tick() {
+        let progress_bar = ProgressBar::new(Box::new(MockProgress::new()));
+
+        let start = std::time::Instant::now();
+        drop(progress_bar);
+
+        assert!(start.elapsed() < Duration::from_millis(40));
     }
 
     #[test]
