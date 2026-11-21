@@ -117,7 +117,7 @@ impl Parallel {
         console::set_colors_enabled(true);
         console::set_colors_enabled_stderr(true);
 
-        let console_size = Term::stdout().size();
+        let console_size = Term::stderr().size();
         let state = Arc::new(Mutex::new(State::default()));
 
         let (sender, receiver) = mpsc::channel();
@@ -305,6 +305,8 @@ impl Progress for Parallel {
     }
 
     fn render(&mut self) {
+        // Re-read every frame so a resized terminal takes effect.
+        self.console_size = Term::stderr().size();
         let mut state = self.state.lock().unwrap();
         let width = self.console_size.1 as usize;
 
@@ -516,6 +518,16 @@ mod tests {
 
         let next = parallel.append("Next");
         wait_for(|| parallel.state.lock().unwrap().bars.contains_key(&next));
+    }
+
+    #[test]
+    fn parallel_render_refreshes_console_size() {
+        let mut parallel = Parallel::new();
+        parallel.console_size = (1, 1);
+
+        parallel.render();
+
+        assert_eq!(parallel.console_size, Term::stderr().size());
     }
 
     #[test]

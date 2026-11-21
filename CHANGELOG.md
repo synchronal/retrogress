@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Re-read the terminal size from stderr on every Parallel render, so
+  resizes take effect.
 - Drop a `ProgressBar` without waiting up to 80ms for its next tick.
 - Stop leaking a `ProgressBar`'s clone counter, and remove its `unsafe`
   `Send` and `Sync` impls.
