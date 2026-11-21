@@ -49,6 +49,22 @@ impl Sync {
         }
     }
 
+    /// The bar that owns the bottom line, unless a prompt has it.
+    fn live_bar(&self) -> Option<Renderer> {
+        if self.prompt.is_some() {
+            return None;
+        }
+        let current = (*self.current.lock().unwrap())?;
+        self.bars.lock().unwrap().get(&current).cloned()
+    }
+
+    /// Redraws the live bar after other output has cleared its line.
+    fn redraw_live(&self) {
+        if let Some(pb) = self.live_bar() {
+            pb.render();
+        }
+    }
+
     /// Whether redrawing `reference` should end its line. The current bar
     /// redraws in place, and a hidden bar draws nothing, so only a visible
     /// finished bar is reprinted onto a line of its own.
@@ -96,6 +112,7 @@ impl Progress for Sync {
         }
 
         self.release(reference);
+        self.redraw_live();
     }
 
     fn hide(&mut self, reference: Ref) {
@@ -104,6 +121,7 @@ impl Progress for Sync {
             bars.get(&reference).unwrap().clone()
         };
         pb.hide();
+        self.redraw_live();
     }
 
     fn println(&mut self, reference: Ref, msg: &str) {
@@ -112,7 +130,7 @@ impl Progress for Sync {
             bars.get(&reference).unwrap().clone()
         };
         pb.println(msg);
-        pb.render();
+        self.redraw_live();
     }
 
     fn print_inline(&mut self, msg: &str) {
@@ -121,12 +139,8 @@ impl Progress for Sync {
 
     fn prompt(&mut self, msg: &str) {
         // The prompt takes over the line, so end a running bar's line first.
-        let reference = *self.current.lock().unwrap();
-        if let Some(ref_id) = reference {
-            let bars = self.bars.lock().unwrap();
-            if bars.get(&ref_id).is_some_and(Renderer::is_visible) {
-                eprintln!();
-            }
+        if self.live_bar().is_some_and(|pb| pb.is_visible()) {
+            eprintln!();
         }
 
         self.prompt = Some(msg.into());
@@ -135,18 +149,9 @@ impl Progress for Sync {
     }
 
     fn render(&mut self) {
-        if self.prompt.is_some() {
-            return;
-        }
-
-        let reference = *self.current.lock().unwrap();
-
-        if let Some(ref_id) = reference {
-            let bars = self.bars.lock().unwrap();
-            if let Some(pb) = bars.get(&ref_id) {
-                pb.tick();
-                pb.render();
-            }
+        if let Some(pb) = self.live_bar() {
+            pb.tick();
+            pb.render();
         }
     }
 
@@ -159,6 +164,7 @@ impl Progress for Sync {
         pb.render();
         if self.ends_line(reference) {
             eprintln!();
+            self.redraw_live();
         }
     }
 
@@ -179,6 +185,7 @@ impl Progress for Sync {
         pb.render();
         if self.ends_line(reference) {
             eprintln!();
+            self.redraw_live();
         }
     }
 
@@ -194,6 +201,7 @@ impl Progress for Sync {
         }
 
         self.release(reference);
+        self.redraw_live();
     }
 }
 

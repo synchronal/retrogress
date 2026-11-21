@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Redraw the running Sync bar after output for another bar clears its
+  line.
 - Don't print a blank line when a hidden Sync bar finishes.
 - Only end the line after a Sync redraw when the bar is finished.
 - Stop Sync bars from redrawing over an active prompt.
