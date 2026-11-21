@@ -3,7 +3,7 @@ use crate::progress::Ref;
 use crate::render::Renderer;
 
 use console::Term;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt::Write;
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex};
@@ -99,6 +99,9 @@ pub struct Parallel {
     message_sender: Sender<ProgressMessage>,
     worker_thread: Option<JoinHandle<()>>,
     state: Arc<Mutex<State>>,
+    /// Bars appended and not yet finished, checked before sending so that
+    /// misuse panics in the caller instead of the worker.
+    live: HashSet<Ref>,
 }
 
 impl std::fmt::Debug for Parallel {
@@ -128,11 +131,28 @@ impl Parallel {
             message_sender: sender,
             worker_thread,
             state,
+            live: HashSet::new(),
         }
     }
 
     pub fn boxed() -> Box<Self> {
         Box::new(Self::new())
+    }
+
+    /// Panics if `reference` was never appended or has already finished.
+    fn check(&self, reference: Ref) {
+        assert!(
+            self.live.contains(&reference),
+            "unknown progress bar {reference}"
+        );
+    }
+
+    /// Marks a finishing bar as no longer live, panicking like `check`.
+    fn retire(&mut self, reference: Ref) {
+        assert!(
+            self.live.remove(&reference),
+            "unknown progress bar {reference}"
+        );
     }
 
     fn progress_worker(receiver: Receiver<ProgressMessage>, state: Arc<Mutex<State>>) {
@@ -244,6 +264,7 @@ impl Drop for Parallel {
 impl Progress for Parallel {
     fn append(&mut self, msg: &str) -> Ref {
         let reference = Ref::new();
+        self.live.insert(reference);
         let _ = self
             .message_sender
             .send(ProgressMessage::Append(reference, msg.to_string()));
@@ -255,10 +276,12 @@ impl Progress for Parallel {
     }
 
     fn failed(&mut self, reference: Ref) {
+        self.retire(reference);
         let _ = self.message_sender.send(ProgressMessage::Failed(reference));
     }
 
     fn hide(&mut self, reference: Ref) {
+        self.check(reference);
         let _ = self.message_sender.send(ProgressMessage::Hide(reference));
     }
 
@@ -269,6 +292,7 @@ impl Progress for Parallel {
     }
 
     fn println(&mut self, reference: Ref, msg: &str) {
+        self.check(reference);
         let _ = self
             .message_sender
             .send(ProgressMessage::Println(reference, msg.to_string()));
@@ -431,6 +455,7 @@ impl Progress for Parallel {
     }
 
     fn set_message(&mut self, reference: Ref, msg: String) {
+        self.check(reference);
         let _ = self
             .message_sender
             .send(ProgressMessage::SetMessage(reference, msg));
@@ -443,10 +468,12 @@ impl Progress for Parallel {
     }
 
     fn show(&mut self, reference: Ref) {
+        self.check(reference);
         let _ = self.message_sender.send(ProgressMessage::Show(reference));
     }
 
     fn succeeded(&mut self, reference: Ref) {
+        self.retire(reference);
         let _ = self
             .message_sender
             .send(ProgressMessage::Succeeded(reference));
@@ -465,6 +492,48 @@ mod tests {
     use crate::Progress;
     use std::thread;
     use std::time::Duration;
+
+    fn wait_for(condition: impl Fn() -> bool) {
+        let deadline = std::time::Instant::now() + Duration::from_secs(1);
+        while !condition() {
+            assert!(std::time::Instant::now() < deadline, "timed out");
+            thread::sleep(Duration::from_millis(5));
+        }
+    }
+
+    #[test]
+    fn parallel_finished_ref_panics_in_caller_and_worker_survives() {
+        let mut parallel = Parallel::new();
+        let finished = parallel.append("Finished");
+        parallel.succeeded(finished);
+        wait_for(|| parallel.state.lock().unwrap().finished.contains(&finished));
+        parallel.render();
+
+        let misuse = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            parallel.set_message(finished, "Too late".to_string());
+        }));
+        assert!(misuse.is_err());
+
+        let next = parallel.append("Next");
+        wait_for(|| parallel.state.lock().unwrap().bars.contains_key(&next));
+    }
+
+    #[test]
+    #[should_panic(expected = "unknown progress bar")]
+    fn parallel_println_panics_with_unknown_reference() {
+        let mut parallel = Parallel::new();
+        parallel.println(Ref::new(), "Nobody appended this");
+    }
+
+    #[test]
+    #[should_panic(expected = "unknown progress bar")]
+    fn parallel_failed_panics_when_finished_twice() {
+        let mut parallel = Parallel::new();
+        let pb = parallel.append("Task");
+        parallel.succeeded(pb);
+
+        parallel.failed(pb);
+    }
 
     #[test]
     fn parallel_debug_trait() {

@@ -15,8 +15,9 @@
 
 ### Breaking changes
 
-- Sync drops bar refs when they succeeds or fails, so using reference
-  afterwards now panics.
+- Using an unknown or finished bar ref now panics in the caller. Sync no
+  longer reprints finished bars, and Parallel no longer crashes its
+  worker thread and stops all output.
 
 ## 2.0.0
 
