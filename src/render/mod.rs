@@ -103,6 +103,10 @@ impl Renderer {
         state.visible = true;
     }
 
+    pub fn is_visible(&self) -> bool {
+        self.state.lock().unwrap().visible
+    }
+
     pub fn finish(&self) {
         let mut state = self.state.lock().unwrap();
         state.finished = true;

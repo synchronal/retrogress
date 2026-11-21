@@ -111,12 +111,25 @@ impl Progress for Sync {
     }
 
     fn prompt(&mut self, msg: &str) {
+        // The prompt takes over the line, so end a running bar's line first.
+        let reference = *self.current.lock().unwrap();
+        if let Some(ref_id) = reference {
+            let bars = self.bars.lock().unwrap();
+            if bars.get(&ref_id).is_some_and(Renderer::is_visible) {
+                eprintln!();
+            }
+        }
+
         self.prompt = Some(msg.into());
         eprint!("{}", msg);
         let _ = Term::stderr().show_cursor();
     }
 
     fn render(&mut self) {
+        if self.prompt.is_some() {
+            return;
+        }
+
         let reference = *self.current.lock().unwrap();
 
         if let Some(ref_id) = reference {
@@ -282,6 +295,37 @@ mod tests {
         let second = sync.append("Second task");
         sync.failed(second);
         assert_eq!(*sync.current.lock().unwrap(), None);
+    }
+
+    fn rendered(sync: &Sync, reference: Ref) -> String {
+        sync.bars.lock().unwrap()[&reference].to_string()
+    }
+
+    #[test]
+    fn sync_render_leaves_bar_alone_during_prompt() {
+        let mut sync = Sync::new();
+        let pb = sync.append("Task");
+        sync.prompt("Continue? ");
+        let before = rendered(&sync, pb);
+
+        sync.render();
+        sync.set_prompt_input("y".to_string());
+        sync.render();
+
+        assert_eq!(rendered(&sync, pb), before);
+    }
+
+    #[test]
+    fn sync_render_resumes_after_prompt_clears() {
+        let mut sync = Sync::new();
+        let pb = sync.append("Task");
+        sync.prompt("Continue? ");
+        sync.clear_prompt();
+        let before = rendered(&sync, pb);
+
+        sync.render();
+
+        assert_ne!(rendered(&sync, pb), before);
     }
 
     #[test]
